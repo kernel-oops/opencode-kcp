@@ -1,7 +1,8 @@
 {
     "$schema": "https://json.schemastore.org/package.json",
-    "name": "@tarquinen/opencode-dcp",
-    "version": "3.2.0",
+    "name": "opencode-kcp",
+    "version": "3.2.0-kernel-oops.20261023.1",
+    "private": true,
     "type": "module",
     "workspaces": [
         "tests/logger"
@@ -46,29 +47,21 @@
         "optimization",
         "tokens"
     ],
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/Opencode-DCP/opencode-dynamic-context-pruning.git"
-    },
-    "bugs": {
-        "url": "https://github.com/Opencode-DCP/opencode-dynamic-context-pruning/issues"
-    },
-    "homepage": "https://github.com/Opencode-DCP/opencode-dynamic-context-pruning#readme",
     "author": "tarquinen",
     "license": "AGPL-3.0-or-later",
     "peerDependencies": {
         "@opencode-ai/plugin": ">=1.18.29"
     },
     "dependencies": {
+        "@opencode-ai/plugin": "^1.18.29",
         "@anthropic-ai/tokenizer": "^0.0.4",
         "@opencode-ai/sdk": "^1.4.3",
         "@opentui/core": "^0.4.5",
         "@opentui/solid": "^0.4.5",
         "jsonc-parser": "^3.3.1",
-        "solid-js": "^1.9.12"
+        "solid-js": "1.9.16"
     },
     "devDependencies": {
-        "@opencode-ai/plugin": "^1.18.29",
         "@opencode/plugin": "^2.0.4",
         "@opencode/theme": "^2.0.4",
         "@types/node": "^25.5.0",
@@ -78,6 +71,8 @@
         "typescript": "^6.0.2"
     },
     "overrides": {
+        "toml@^4.1.1": "5.0.1",
+        "brace-expansion@^2.0.0": "2.1.7",
         "@babel/core": "7.29.7",
         "esbuild": "0.28.1"
     },
@@ -86,6 +81,7 @@
         "lib/",
         "server.js",
         "tui.tsx",
+        "dcp.schema.json",
         "README.md",
         "LICENSE"
     ]

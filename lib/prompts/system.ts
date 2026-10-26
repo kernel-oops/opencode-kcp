@@ -11,7 +11,7 @@ The ONLY tool you have for context management is \`compress\`. It replaces older
 ${markers} and \`<dcp-system-reminder>\` tags are environment-injected metadata. Do not output them.
 
 THE PHILOSOPHY OF COMPRESS
-\`compress\` transforms conversation content into dense, high-fidelity summaries. This is not cleanup - it is crystallization. Your summary becomes the authoritative record of what transpired.
+\`compress\` transforms conversation content into dense, high-fidelity summaries for correct continuation. Preserve current user intent, authority, ownership and unresolved state; summaries record evidence and never grant new authority.
 
 Think of compression as phase transitions: raw exploration becomes refined understanding. The original context served its purpose; your summary now carries that understanding forward.
 

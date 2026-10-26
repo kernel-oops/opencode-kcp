@@ -32,6 +32,15 @@ import { history, project } from "./messages"
 import { analyzeContextTokens } from "../commands/context"
 import { buildStatsReport } from "../commands/stats"
 import { rpc } from "./rpc"
+import { elideCommittedCompressSummaries } from "./compress-inputs"
+import { classifyRewrite } from "../compress/range-utils"
+import {
+    DEFAULT_MINIMUM_REDUCTION_PERCENT,
+    takeLowYieldAdvisory,
+    validateMinimumReductionPercent,
+} from "../compress/low-yield"
+import { injectAnchoredNudge } from "../messages/inject/utils"
+import { rewriteBlocks, completeRewrite, type RewriteInput } from "../compress/rewrite"
 
 // Extension point for future model-invisible V2 reports. Never use synthetic()
 // here: its text would enter the model's context, unlike V1 ignored messages.
@@ -40,6 +49,35 @@ export async function report(logger: Logger, text: string, sessionID?: string) {
 }
 
 export async function setup(ctx: Plugin.Context) {
+    const warned = new Set<string>()
+    function unavailable(contract: string) {
+        if (warned.has(contract)) return
+        warned.add(contract)
+        console.warn(`DCP: unavailable ${contract}`)
+    }
+    // Validate the complete baseline before exposing any mutating registration.
+    const required = [
+        ["session.get", ctx.session?.get],
+        ["session.context", ctx.session?.context],
+        ["session.hook", ctx.session?.hook],
+        ["agent.get", ctx.agent?.get],
+        ["tool.transform", ctx.tool?.transform],
+    ] as const
+    const missing = required.filter(([, method]) => typeof method !== "function")
+    if (missing.length) {
+        unavailable(
+            `V2 baseline (${missing.map(([name]) => name).join(", ")}); compression not registered`,
+        )
+        return
+    }
+    if (typeof ctx.location?.directory !== "string" || !ctx.location.directory) {
+        unavailable("V2 baseline (location.directory); compression not registered")
+        return
+    }
+    const hasRpc = typeof ctx.rpc?.register === "function"
+    const hasCommands = typeof ctx.command?.transform === "function"
+    const hasPrompt = typeof ctx.session.prompt === "function"
+    const hasModels = typeof ctx.model?.transform === "function"
     const warnings = {
         tui: {
             showToast: async (input: { body: { message: string } }) => {
@@ -49,10 +87,11 @@ export async function setup(ctx: Plugin.Context) {
     }
     const config = getConfig({ directory: ctx.location.directory, client: warnings })
     if (!config.enabled) {
-        await ctx.rpc.register(
-            { ...rpc, methods: { status: rpc.methods.status } },
-            { status: async () => ({ enabled: false }) },
-        )
+        if (hasRpc)
+            await ctx.rpc.register(
+                { ...rpc, methods: { status: rpc.methods.status } },
+                { status: async () => ({ enabled: false }) },
+            )
         return
     }
     const logger = new Logger(config.debug)
@@ -91,16 +130,30 @@ export async function setup(ctx: Plugin.Context) {
         return pending
     }
 
+    async function read(sessionID: string) {
+        const [session, entries] = await Promise.all([
+            ctx.session.get({ sessionID }),
+            ctx.session.context({ sessionID }),
+        ])
+        if (
+            session?.id !== sessionID ||
+            !Array.isArray(entries) ||
+            entries.some((entry) => !entry || typeof entry.id !== "string" || !entry.id) ||
+            new Set(entries.map((entry) => entry.id)).size !== entries.length
+        )
+            throw new Error(
+                "DCP: invalid V2 session context identity; compression was not performed",
+            )
+        return { session, entries }
+    }
+
     const client = {
         session: {
             get: async ({ path }: { path: { id: string } }) => ({
                 data: await ctx.session.get({ sessionID: path.id }),
             }),
             messages: async ({ path }: { path: { id: string } }) => {
-                const [entries, session] = await Promise.all([
-                    ctx.session.context({ sessionID: path.id }),
-                    ctx.session.get({ sessionID: path.id }),
-                ])
+                const { session, entries } = await read(path.id)
                 return { data: history(entries, session) }
             },
             prompt: async (input: {
@@ -115,17 +168,55 @@ export async function setup(ctx: Plugin.Context) {
         },
     }
 
-    async function load(sessionID: string, agentID?: string) {
-        const [session, entries] = await Promise.all([
-            ctx.session.get({ sessionID }),
-            ctx.session.context({ sessionID }),
-        ])
+    function compressionPermission(
+        permissions: Array<{ action: string; resource: string; effect: string }>,
+    ): SessionState["compressPermission"] {
+        const rule = permissions.findLast(
+            (rule) => matchesGlob("compress", rule.action) && matchesGlob("*", rule.resource),
+        )
+        return config.compress.permission === "deny" || rule?.effect === "deny"
+            ? "deny"
+            : config.compress.permission === "ask" || rule?.effect === "ask"
+              ? "ask"
+              : "allow"
+    }
+
+    async function readPolicy(sessionID: string, agentID?: string) {
+        const { session, entries } = await read(sessionID)
         const selected =
             agentID ??
             session.agent ??
             entries.findLast((entry) => entry.type === "assistant")?.agent
         if (!selected) throw new Error("DCP commands require a session with a selected agent")
         const { data: agent } = await ctx.agent.get({ agentID: selected })
+        if (
+            !Array.isArray(agent?.permissions) ||
+            (session.permissions !== undefined && !Array.isArray(session.permissions))
+        )
+            throw new Error("DCP: invalid V2 permission rules; compression was not performed")
+        const permissions = [...agent.permissions, ...(session.permissions ?? [])]
+        if (
+            permissions.some(
+                (rule) =>
+                    !rule ||
+                    typeof rule.action !== "string" ||
+                    typeof rule.resource !== "string" ||
+                    !["allow", "deny", "ask"].includes(rule.effect),
+            )
+        )
+            throw new Error("DCP: invalid V2 permission rules; compression was not performed")
+        return {
+            session,
+            entries,
+            policy: {
+                compressPermission: compressionPermission(permissions),
+                isSubAgent: !!session.parentID,
+            },
+        }
+    }
+
+    async function load(sessionID: string, agentID?: string) {
+        const { session, entries, policy } = await readPolicy(sessionID, agentID)
         let state = sessions.get(sessionID)
         if (!state) {
             state = createSessionState("compact")
@@ -141,17 +232,7 @@ export async function setup(ctx: Plugin.Context) {
             config.manualMode.enabled,
         )
         await checkSession(client, state, logger, messages, config.manualMode.enabled)
-        const rule = [...agent.permissions, ...(session.permissions ?? [])].findLast(
-            (rule) => matchesGlob("compress", rule.action) && matchesGlob("*", rule.resource),
-        )
-        state.compressPermission =
-            config.compress.permission === "deny"
-                ? "deny"
-                : rule?.effect === "deny"
-                  ? "deny"
-                  : config.compress.permission === "ask" || rule?.effect === "ask"
-                    ? "ask"
-                    : "allow"
+        state.compressPermission = policy.compressPermission
         return { state, entries, session, messages }
     }
 
@@ -161,15 +242,33 @@ export async function setup(ctx: Plugin.Context) {
         if (state.compressPermission === "deny") throw new Error("DCP compression is denied")
         if (state.compressPermission === "ask")
             throw new Error(
-                "DCP: compress permission 'ask' is not supported by OpenCode V2's public plugin API yet. Compression was not performed.",
+                "DCP: permission 'ask' is not integrated by this V2 adapter. Compression was not performed.",
             )
     }
 
-    await ctx.model.transform((editor) => {
-        limits.clear()
-        for (const model of editor.list())
-            limits.set(`${model.providerID}/${model.id}`, model.limit.context)
-    })
+    if (hasModels)
+        await ctx.model.transform((editor) => {
+            limits.clear()
+            for (const model of editor.list()) {
+                if (
+                    !model ||
+                    typeof model.providerID !== "string" ||
+                    !model.providerID ||
+                    typeof model.id !== "string" ||
+                    !model.id ||
+                    typeof model.limit?.context !== "number" ||
+                    !Number.isFinite(model.limit.context) ||
+                    model.limit.context <= 0
+                ) {
+                    unavailable(
+                        "valid model context metadata for an entry; unknown models use configured absolute thresholds",
+                    )
+                    continue
+                }
+                limits.set(`${model.providerID}/${model.id}`, model.limit.context)
+            }
+        })
+    else unavailable("model.transform; using configured absolute thresholds only")
     for (const kind of ["context", "compaction"] as const)
         await ctx.session.hook(kind, (event) =>
             serial(event.sessionID, async () => {
@@ -182,8 +281,9 @@ export async function setup(ctx: Plugin.Context) {
                     return
                 }
                 if (state.compressPermission === "deny") delete event.tools.compress
+                if (kind === "compaction") state.lowYield = null
                 state.modelContextLimit = limits.get(`${event.model.providerID}/${event.model.id}`)
-                state.systemPromptTokens = countTokens(
+                state.systemPromptTokens = await countTokens(
                     event.system.map((part) => part.text).join("\n"),
                 )
                 const view = project(event.messages, entries, {
@@ -195,9 +295,9 @@ export async function setup(ctx: Plugin.Context) {
                 assignMessageRefs(state, view.messages)
                 // Compaction may select only a prefix; block origins can be in the retained tail.
                 syncCompressionBlocks(state, logger, messages)
-                syncToolCache(state, config, logger, view.messages)
+                await syncToolCache(state, config, logger, view.messages)
                 buildToolIdList(state, view.messages)
-                prune(state, logger, config, view.messages, view.summaryBase)
+                const rendered = prune(state, logger, config, view.messages, view.summaryBase)
                 await injectExtendedSubAgentResults(
                     client,
                     state,
@@ -205,7 +305,7 @@ export async function setup(ctx: Plugin.Context) {
                     view.messages,
                     config.experimental.allowSubAgents,
                 )
-                const priorities = buildPriorityMap(config, state, view.messages)
+                const priorities = await buildPriorityMap(config, state, view.messages)
                 prompts.reload()
                 injectCompressNudges(
                     state,
@@ -217,8 +317,26 @@ export async function setup(ctx: Plugin.Context) {
                     kind === "context",
                 )
                 injectMessageIds(state, config, view.messages, priorities)
+                if (kind === "context") {
+                    const advisory = takeLowYieldAdvisory(state, entries)
+                    const last = view.messages.at(-1)
+                    if (
+                        advisory &&
+                        last &&
+                        config.compress.mode === "range" &&
+                        state.compressPermission === "allow" &&
+                        !state.manualMode
+                    )
+                        injectAnchoredNudge(last, advisory)
+                }
                 applyPendingManualTrigger(state, view.messages, logger)
-                event.messages = view.restore()
+                event.messages = elideCommittedCompressSummaries(
+                    view.restore(),
+                    entries,
+                    state,
+                    rendered,
+                    config,
+                )
                 const system = { system: event.system.map((part) => part.text) }
                 await createSystemPromptHandler(
                     state,
@@ -238,6 +356,7 @@ export async function setup(ctx: Plugin.Context) {
                     text,
                 }))
                 await logger.saveContext(event.sessionID, view.messages)
+                if (kind === "context") state.prune.messages.visibleBlockIds = new Set(rendered)
             }),
         )
 
@@ -245,18 +364,97 @@ export async function setup(ctx: Plugin.Context) {
         const define = (state: SessionState): ToolDefinition =>
             (config.compress.mode === "message"
                 ? createCompressMessageTool
-                : createCompressRangeTool)({ client, state, logger, config, prompts })
+                : createCompressRangeTool)({
+                client,
+                state,
+                logger,
+                config,
+                prompts,
+                nativeInputProof: true,
+                supportsRewrite: config.compress.mode === "range" ? true : undefined,
+            })
         const definition = define(createSessionState("compact"))
+        const inputSchema = tool.schema.object(definition.args)
         await ctx.tool.transform((editor) =>
             editor.add({
                 name: "compress",
                 description: definition.description,
-                input: tool.schema.object(definition.args),
+                input: inputSchema,
                 options: { codemode: false, permission: "compress" },
                 execute: (input, context) =>
                     serial(context.sessionID, async () => {
+                        const rewrite = classifyRewrite(input, config.compress.mode === "range")
+                        validateMinimumReductionPercent(
+                            (input as { minimumReductionPercent?: unknown })
+                                ?.minimumReductionPercent,
+                        )
+                        if (rewrite) {
+                            input = inputSchema.parse(input)
+                            const state = sessions.get(context.sessionID)
+                            if (!state || state.sessionId !== context.sessionID)
+                                throw new Error(
+                                    "DCP rewrite requires an initialised visible session",
+                                )
+                            const { policy } = await readPolicy(context.sessionID, context.agent)
+                            allowed({ ...state, ...policy })
+                            const shared = {
+                                client,
+                                state,
+                                logger,
+                                config,
+                                prompts,
+                                nativeInputProof: true as const,
+                                supportsRewrite: true as const,
+                                rewritePolicy: policy,
+                            }
+                            const run = {
+                                sessionID: context.sessionID,
+                                messageID: context.messageID,
+                                ask: async () => allowed({ ...state, ...policy }),
+                                metadata: () => {},
+                            }
+                            const started = Date.now()
+                            const result = await rewriteBlocks(
+                                shared,
+                                run,
+                                input as unknown as RewriteInput,
+                                context.id,
+                            )
+                            if (
+                                result.status === "published" &&
+                                !result.warning &&
+                                state.prune.messages === result.messagesState &&
+                                state.lastCompaction === result.generation
+                            ) {
+                                try {
+                                    attachCompressionDuration(
+                                        state.prune.messages,
+                                        context.messageID,
+                                        context.id,
+                                        Date.now() - started,
+                                    )
+                                    await saveSessionState(state, logger)
+                                } catch (error) {
+                                    try {
+                                        logger.warn(
+                                            "Rewrite committed; duration/save follow-up failed",
+                                            { error: String(error) },
+                                        )
+                                    } catch {}
+                                }
+                            }
+                            const content = await completeRewrite(
+                                shared,
+                                run,
+                                result,
+                                (input as unknown as RewriteInput).topic,
+                            )
+                            state.lowYield = null
+                            return { content }
+                        }
                         const { state } = await load(context.sessionID, context.agent)
                         allowed(state)
+                        input = inputSchema.parse(input)
                         const started = Date.now()
                         const legacy = define(state)
                         const content = await legacy.execute(input, {
@@ -279,6 +477,16 @@ export async function setup(ctx: Plugin.Context) {
                             Date.now() - started,
                         )
                         await saveSessionState(state, logger)
+                        state.lowYield =
+                            config.compress.mode === "range"
+                                ? {
+                                      assistantID: context.messageID,
+                                      threshold:
+                                          (input as { minimumReductionPercent?: number })
+                                              .minimumReductionPercent ??
+                                          DEFAULT_MINIMUM_REDUCTION_PERCENT,
+                                  }
+                                : null
                         // Both shared compression executors return text; the V1 helper's
                         // public return type also permits unrelated attachment results.
                         return { content: content as string }
@@ -286,7 +494,7 @@ export async function setup(ctx: Plugin.Context) {
             }),
         )
     }
-    if (config.commands.enabled)
+    if (config.commands.enabled && hasCommands && hasPrompt)
         await ctx.command.transform((editor) => {
             for (const name of ["dcp", "dcp-compress"])
                 editor.add({
@@ -295,6 +503,7 @@ export async function setup(ctx: Plugin.Context) {
                     execute: async (invocation) => {
                         const prompt = await serial(invocation.sessionID, async () => {
                             const { state } = await load(invocation.sessionID)
+                            state.lowYield = null
                             const permission =
                                 state.compressPermission ?? config.compress.permission
                             if (
@@ -334,35 +543,41 @@ export async function setup(ctx: Plugin.Context) {
                     },
                 })
         })
-    await ctx.rpc.register(rpc, {
-        status: async () => ({ enabled: config.commands.enabled }),
-        snapshot: ({ sessionID }) =>
-            serial(sessionID, async () => {
-                const { state, messages } = await load(sessionID)
-                syncCompressionBlocks(state, logger, messages)
-                return {
-                    manualMode: !!state.manualMode,
-                    canCompress:
-                        state.compressPermission === "allow" &&
-                        (!state.isSubAgent || config.experimental.allowSubAgents),
-                    ...(state.compressPermission === "ask"
-                        ? {
-                              blockedReason:
-                                  "Permission 'ask' is not supported by the V2 plugin API yet.",
-                          }
-                        : {}),
-                    context: analyzeContextTokens(state, messages),
-                    stats: await buildStatsReport(state, logger),
-                }
-            }),
-        manual: ({ sessionID, enabled }) =>
-            serial(sessionID, async () => {
-                const { state } = await load(sessionID)
-                state.manualMode = enabled ? "active" : false
-                await saveSessionState(state, logger)
-                return {}
-            }),
-    })
+    else if (config.commands.enabled)
+        unavailable(
+            `command support (${[!hasCommands && "command.transform", !hasPrompt && "session.prompt"].filter(Boolean).join(", ")})`,
+        )
+    if (hasRpc)
+        await ctx.rpc.register(rpc, {
+            status: async () => ({ enabled: config.commands.enabled && hasCommands && hasPrompt }),
+            snapshot: ({ sessionID }) =>
+                serial(sessionID, async () => {
+                    const { state, messages } = await load(sessionID)
+                    syncCompressionBlocks(state, logger, messages)
+                    return {
+                        manualMode: !!state.manualMode,
+                        canCompress:
+                            state.compressPermission === "allow" &&
+                            (!state.isSubAgent || config.experimental.allowSubAgents),
+                        ...(state.compressPermission === "ask"
+                            ? {
+                                  blockedReason:
+                                      "Permission 'ask' is not integrated by this V2 adapter.",
+                              }
+                            : {}),
+                        context: await analyzeContextTokens(state, messages),
+                        stats: await buildStatsReport(state, logger),
+                    }
+                }),
+            manual: ({ sessionID, enabled }) =>
+                serial(sessionID, async () => {
+                    const { state } = await load(sessionID)
+                    state.manualMode = enabled ? "active" : false
+                    await saveSessionState(state, logger)
+                    return {}
+                }),
+        })
+    else unavailable("rpc.register; DCP TUI controls are unavailable")
     logger.info("DCP V2 initialized")
     return () => {
         sessions.clear()

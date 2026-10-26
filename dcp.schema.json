@@ -154,7 +154,15 @@
                 "summaryBuffer": {
                     "type": "boolean",
                     "default": true,
-                    "description": "When enabled, active summary tokens extend the effective maxContextLimit used for context-limit nudges."
+                    "description": "When enabled, active summary tokens extend the effective maxContextLimit used for DCP nudges only. This does not increase actual model capacity or a firm request ceiling."
+                },
+                "modelSummaryBuffer": {
+                    "description": "Per-model override for the DCP nudge-threshold extension by exact provider/model key. This does not increase actual model capacity or a firm request ceiling.",
+                    "type": "object",
+                    "propertyNames": {
+                        "pattern": "^[^\\s/]+/[^\\s]+$"
+                    },
+                    "additionalProperties": { "type": "boolean" }
                 },
                 "maxContextLimit": {
                     "description": "Soft upper threshold. Above this, DCP keeps sending strong compression nudges (based on nudgeFrequency), so the model is pushed to compress. Accepts number or \"X%\" of the model context window.",

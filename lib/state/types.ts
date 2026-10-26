@@ -32,7 +32,22 @@ export interface PrunedMessageEntry {
 
 export type CompressionMode = "range" | "message"
 
+/** Protected bytes observed at creation; not historical finality or terminal success. */
+export interface ProtectedChildEvidence {
+    version: 1
+    complete: boolean
+    entries: Array<{
+        capturedBlockId: number
+        sourceMessageId: string
+        callId: string
+        childSessionId: string
+        payload: string
+        payloadHash: string
+    }>
+}
+
 export interface CompressionBlock {
+    protectedChildEvidence?: ProtectedChildEvidence
     blockId: number
     runId: number
     active: boolean
@@ -59,9 +74,15 @@ export interface CompressionBlock {
     deactivatedAt?: number
     deactivatedByBlockId?: number
     summary: string
+    /** SHA-256 of the submitted summary before expansion/protected attachments. */
+    originalSummaryHash?: string
 }
 
 export interface PruneMessagesState {
+    /** Last successful primary DCP view only; never a final provider-delivery claim. */
+    visibleBlockIds: Set<number>
+    /** Runtime-only exact saved block snapshots; never serialised. */
+    savedBlockSnapshots?: Map<number, string>
     byMessageId: Map<string, PrunedMessageEntry>
     blocksById: Map<number, CompressionBlock>
     activeBlockIds: Set<number>
@@ -99,6 +120,8 @@ export interface SessionState {
     manualMode: false | "active" | "compress-pending"
     compressPermission: "ask" | "allow" | "deny" | undefined
     pendingManualTrigger: PendingManualTrigger | null
+    /** Transient observation; deliberately not persisted. */
+    lowYield: { assistantID: string; threshold: number } | null
     prune: Prune
     nudges: Nudges
     stats: SessionStats

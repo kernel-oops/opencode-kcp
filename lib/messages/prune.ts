@@ -18,12 +18,13 @@ export const prune = (
     config: PluginConfig,
     messages: WithParts[],
     summaryBase?: WithParts,
-): void => {
-    filterCompressedRanges(state, logger, config, messages, summaryBase)
+): Set<number> => {
+    const rendered = filterCompressedRanges(state, logger, config, messages, summaryBase)
     // pruneFullTool(state, logger, messages)
     pruneToolOutputs(state, logger, messages)
     pruneToolInputs(state, logger, messages)
     pruneToolErrors(state, logger, messages)
+    return rendered
 }
 
 const pruneFullTool = (state: SessionState, logger: Logger, messages: WithParts[]): void => {
@@ -164,12 +165,13 @@ const filterCompressedRanges = (
     config: PluginConfig,
     messages: WithParts[],
     summaryBase?: WithParts,
-): void => {
+): Set<number> => {
+    const rendered = new Set<number>()
     if (
         state.prune.messages.byMessageId.size === 0 &&
         state.prune.messages.activeByAnchorMessageId.size === 0
     ) {
-        return
+        return rendered
     }
 
     const result: WithParts[] = []
@@ -215,6 +217,7 @@ const filterCompressedRanges = (
                     result.push(
                         createSyntheticUserMessage(userMessage, summaryContent, summarySeed),
                     )
+                    rendered.add(summary.blockId)
 
                     logger.info("Injected compress summary", {
                         anchorMessageId: msgId,
@@ -241,4 +244,5 @@ const filterCompressedRanges = (
     // Replace messages array contents
     messages.length = 0
     messages.push(...result)
+    return rendered
 }

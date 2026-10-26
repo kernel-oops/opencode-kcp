@@ -4,10 +4,14 @@ on:
     pull_request:
         branches: [master, dev]
 
+permissions:
+    contents: read
+
 jobs:
     validate:
         name: Type Check, Build & Audit
         runs-on: ubuntu-latest
+        timeout-minutes: 20
 
         steps:
             - name: Checkout code
@@ -16,24 +20,42 @@ jobs:
             - name: Setup Node.js
               uses: actions/setup-node@v4
               with:
-                  node-version: "20"
-                  cache: "npm"
+                  node-version: "24.22.0"
+
+            - name: Check npm toolchain
+              timeout-minutes: 1
+              run: test "$(npm --version)" = "11.19.1"
 
             - name: Install dependencies
-              run: npm ci --legacy-peer-deps
+              timeout-minutes: 5
+              run: npm ci --ignore-scripts
 
             - name: Format check
+              timeout-minutes: 2
               run: npm run format:check
 
             - name: Type check
+              timeout-minutes: 3
               run: npm run typecheck
 
+            - name: Public capability types
+              timeout-minutes: 2
+              run: node_modules/.bin/tsc --noEmit -p tests/tsconfig.v2-capabilities.json
+
             - name: Build
+              timeout-minutes: 3
               run: npm run build
 
             - name: Test
+              timeout-minutes: 5
               run: npm test
 
+            - name: Verify and pack
+              timeout-minutes: 2
+              run: |
+                  npm run verify:package
+                  npm pack --ignore-scripts --json
+
             - name: Security audit
+              timeout-minutes: 2
               run: npm audit --audit-level=high
-              continue-on-error: false

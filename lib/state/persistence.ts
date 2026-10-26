@@ -7,7 +7,8 @@
 import * as fs from "fs/promises"
 import { existsSync } from "fs"
 import { homedir } from "os"
-import { join } from "path"
+import { join, resolve } from "path"
+import { randomUUID } from "crypto"
 import type { CompressionBlock, PrunedMessageEntry, SessionState, SessionStats } from "./types"
 import type { Logger } from "../logger"
 import { serializePruneMessagesState } from "./utils"
@@ -57,23 +58,153 @@ async function ensureStorageDir(): Promise<void> {
 }
 
 function getSessionFilePath(sessionId: string): string {
-    return join(STORAGE_DIR, `${sessionId}.json`)
+    return resolve(join(STORAGE_DIR, `${sessionId}.json`))
 }
 
-async function writePersistedSessionState(
+// Different state objects can refer to the same session. Order by file, not object identity.
+const writeQueues = new Map<string, Promise<unknown>>()
+
+function queueWrite<T>(filePath: string, write: () => Promise<T>): Promise<T> {
+    const pending = (writeQueues.get(filePath) ?? Promise.resolve()).catch(() => {}).then(write)
+    writeQueues.set(filePath, pending)
+    void pending
+        .finally(() => {
+            if (writeQueues.get(filePath) === pending) writeQueues.delete(filePath)
+        })
+        .catch(() => {})
+    return pending
+}
+
+async function writeFileAtomic(
+    filePath: string,
+    content: string,
+    verify?: () => void,
+): Promise<void> {
+    const tempPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`
+    // Only remove a file we created; an exclusive-open failure does not confer ownership.
+    const handle = await fs.open(tempPath, "wx", 0o600)
+    try {
+        try {
+            await handle.writeFile(content, "utf-8")
+            await handle.sync()
+        } finally {
+            await handle.close()
+        }
+        verify?.()
+        await fs.rename(tempPath, filePath)
+    } catch (error) {
+        await fs.rm(tempPath, { force: true }).catch(() => {})
+        throw error
+    }
+}
+
+function captureSessionState(
+    sessionState: SessionState,
+    sessionName?: string,
+): PersistedSessionState {
+    return {
+        sessionName,
+        manualMode: !!sessionState.manualMode,
+        prune: {
+            tools: Object.fromEntries(sessionState.prune.tools),
+            messages: serializePruneMessagesState(sessionState.prune.messages),
+        },
+        nudges: {
+            contextLimitAnchors: Array.from(sessionState.nudges.contextLimitAnchors),
+            turnNudgeAnchors: Array.from(sessionState.nudges.turnNudgeAnchors),
+            iterationNudgeAnchors: Array.from(sessionState.nudges.iterationNudgeAnchors),
+        },
+        stats: sessionState.stats,
+        lastUpdated: new Date().toISOString(),
+    }
+}
+
+export type SessionCommitOutcome =
+    | { committed: true; status: "published"; warning?: unknown }
+    | { committed: true; status: "superseded" | "publication-failed"; error: unknown }
+
+/** Rename is the commit point. Callers must not retry a committed outcome. */
+export function commitSessionState(
+    staged: SessionState,
+    logger: Logger,
+    transaction: { verify(): void; publish(): void },
+): Promise<SessionCommitOutcome> {
+    if (!staged.sessionId) throw new Error("Strict commit requires an initialised session")
+    const id = staged.sessionId
+    const messages = staged.prune.messages
+    // Both JSON and proof are immutable before the first queue wait.
+    const content = JSON.stringify(captureSessionState(staged), null, 2)
+    const persisted = JSON.parse(content) as PersistedSessionState
+    const snapshots = new Map(
+        Object.entries(persisted.prune.messages!.blocksById).map(([key, block]) => [
+            Number(key),
+            JSON.stringify(block),
+        ]),
+    )
+    const verifyCaptured = () => {
+        const current = captureSessionState(staged)
+        current.lastUpdated = persisted.lastUpdated
+        if (
+            staged.sessionId !== id ||
+            staged.prune.messages !== messages ||
+            JSON.stringify(current, null, 2) !== content
+        )
+            throw new Error("Strict staged snapshot changed before publication")
+        transaction.verify()
+    }
+    return queueWrite(getSessionFilePath(id), async (): Promise<SessionCommitOutcome> => {
+        verifyCaptured()
+        await ensureStorageDir()
+        await writeFileAtomic(getSessionFilePath(id), content, verifyCaptured)
+        // All exceptions beyond this point describe an already committed file.
+        try {
+            verifyCaptured()
+        } catch (error) {
+            return { committed: true, status: "superseded", error }
+        }
+        try {
+            messages.savedBlockSnapshots = snapshots
+            transaction.publish()
+        } catch (error) {
+            messages.savedBlockSnapshots = undefined
+            return { committed: true, status: "publication-failed", error }
+        }
+        try {
+            logger.info("Committed session state to disk", { sessionId: id })
+        } catch (warning) {
+            return { committed: true, status: "published", warning }
+        }
+        return { committed: true, status: "published" }
+    })
+}
+
+async function writeSerializedSessionState(
     sessionId: string,
-    state: PersistedSessionState,
+    content: string,
+    totalTokensSaved: number,
     logger: Logger,
 ): Promise<void> {
     await ensureStorageDir()
-
-    const filePath = getSessionFilePath(sessionId)
-    const content = JSON.stringify(state, null, 2)
-    await fs.writeFile(filePath, content, "utf-8")
+    await writeFileAtomic(getSessionFilePath(sessionId), content)
 
     logger.info("Saved session state to disk", {
         sessionId,
-        totalTokensSaved: state.stats.totalPruneTokens,
+        totalTokensSaved,
+    })
+}
+
+function writePersistedSessionState(
+    sessionId: string,
+    state: PersistedSessionState,
+    logger: Logger,
+    written?: () => void,
+): Promise<void> {
+    // Serialise before any asynchronous wait: nested state and stats remain mutable.
+    const content = JSON.stringify(state, null, 2)
+    const totalTokensSaved = state.stats.totalPruneTokens
+    return queueWrite(getSessionFilePath(sessionId), async () => {
+        await writeSerializedSessionState(sessionId, content, totalTokensSaved, logger)
+        written?.()
     })
 }
 
@@ -87,23 +218,27 @@ export async function saveSessionState(
             return
         }
 
-        const state: PersistedSessionState = {
-            sessionName: sessionName,
-            manualMode: !!sessionState.manualMode,
-            prune: {
-                tools: Object.fromEntries(sessionState.prune.tools),
-                messages: serializePruneMessagesState(sessionState.prune.messages),
-            },
-            nudges: {
-                contextLimitAnchors: Array.from(sessionState.nudges.contextLimitAnchors),
-                turnNudgeAnchors: Array.from(sessionState.nudges.turnNudgeAnchors),
-                iterationNudgeAnchors: Array.from(sessionState.nudges.iterationNudgeAnchors),
-            },
-            stats: sessionState.stats,
-            lastUpdated: new Date().toISOString(),
-        }
+        const sessionId = sessionState.sessionId
+        const messages = sessionState.prune.messages
+        const checkpoint = sessionState.lastCompaction
 
-        await writePersistedSessionState(sessionState.sessionId, state, logger)
+        const state = captureSessionState(sessionState, sessionName)
+
+        // Capture bytes before queueing. Live blocks may change while the rename waits.
+        const snapshots = new Map(
+            Object.entries(state.prune.messages!.blocksById).map(([id, block]) => [
+                Number(id),
+                JSON.stringify(block),
+            ]),
+        )
+        await writePersistedSessionState(sessionId, state, logger, () => {
+            if (
+                sessionState.sessionId === sessionId &&
+                sessionState.prune.messages === messages &&
+                sessionState.lastCompaction === checkpoint
+            )
+                messages.savedBlockSnapshots = snapshots
+        })
     } catch (error: any) {
         logger.error("Failed to save session state", {
             sessionId: sessionState.sessionId,
@@ -245,11 +380,18 @@ export async function saveManualModeSetting(
     manualMode: boolean,
     logger: Logger,
 ): Promise<void> {
-    const existing = await loadSessionState(sessionId, logger)
-    const state = existing ?? emptyPersistedState(manualMode)
-    state.manualMode = manualMode
-    state.lastUpdated = new Date().toISOString()
-    await writePersistedSessionState(sessionId, state, logger)
+    await queueWrite(getSessionFilePath(sessionId), async () => {
+        const existing = await loadSessionState(sessionId, logger)
+        const state = existing ?? emptyPersistedState(manualMode)
+        state.manualMode = manualMode
+        state.lastUpdated = new Date().toISOString()
+        await writeSerializedSessionState(
+            sessionId,
+            JSON.stringify(state, null, 2),
+            state.stats.totalPruneTokens,
+            logger,
+        )
+    })
 }
 
 export interface AggregatedStats {

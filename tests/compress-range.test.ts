@@ -177,6 +177,7 @@ test("compress range rebuilds subagent message refs after session state was rese
     assert.equal(state.messageIds.byRef.get("m0001"), "msg-assistant-1")
     assert.equal(state.messageIds.byRef.get("m0002"), "msg-user-2")
     assert.equal(state.prune.messages.blocksById.size, 1)
+    assert.equal(state.prune.messages.blocksById.get(1)!.originalSummaryHash, undefined)
 })
 
 test("compress range mode appends protected prompt info", async () => {

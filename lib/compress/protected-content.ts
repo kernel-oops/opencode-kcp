@@ -1,4 +1,4 @@
-import type { SessionState } from "../state"
+import type { SessionState, WithParts } from "../state"
 import { isIgnoredUserMessage } from "../messages/query"
 import { isToolProtected } from "../protected-patterns"
 import {
@@ -8,13 +8,15 @@ import {
 } from "../subagents/subagent-results"
 import { fetchSessionMessages } from "./search"
 import type { SearchContext, SelectionResolution } from "./types"
+import { observeProtectedChild, type ChildEvidenceCollector } from "./protected-child-evidence"
 
 export function appendProtectedUserMessages(
     summary: string,
-    selection: SelectionResolution,
+    selection: Pick<SelectionResolution, "messageIds">,
     searchContext: SearchContext,
     state: SessionState,
     enabled: boolean,
+    includeCompressed = false,
 ): string {
     if (!enabled) return summary
 
@@ -22,7 +24,11 @@ export function appendProtectedUserMessages(
 
     for (const messageId of selection.messageIds) {
         const existingCompressionEntry = state.prune.messages.byMessageId.get(messageId)
-        if (existingCompressionEntry && existingCompressionEntry.activeBlockIds.length > 0) {
+        if (
+            !includeCompressed &&
+            existingCompressionEntry &&
+            existingCompressionEntry.activeBlockIds.length > 0
+        ) {
             continue
         }
 
@@ -51,10 +57,11 @@ export function appendProtectedUserMessages(
 
 export function appendProtectedPromptInfo(
     summary: string,
-    selection: SelectionResolution,
+    selection: Pick<SelectionResolution, "messageIds">,
     searchContext: SearchContext,
     state: SessionState,
     enabled: boolean,
+    includeCompressed = false,
 ): string {
     if (!enabled) return summary
 
@@ -62,7 +69,11 @@ export function appendProtectedPromptInfo(
 
     for (const messageId of selection.messageIds) {
         const existingCompressionEntry = state.prune.messages.byMessageId.get(messageId)
-        if (existingCompressionEntry && existingCompressionEntry.activeBlockIds.length > 0) {
+        if (
+            !includeCompressed &&
+            existingCompressionEntry &&
+            existingCompressionEntry.activeBlockIds.length > 0
+        ) {
             continue
         }
 
@@ -112,6 +123,7 @@ export async function appendProtectedTools(
     searchContext: SearchContext,
     protectedTools: string[],
     protectedFilePatterns: string[] = [],
+    evidence?: ChildEvidenceCollector,
 ): Promise<string> {
     const protectedOutputs: string[] = []
 
@@ -165,12 +177,14 @@ export async function appendProtectedTools(
                             const subAgentSessionId = getSubAgentId(part)
                             if (subAgentSessionId) {
                                 let subAgentResultText = ""
+                                let subAgentMessagesForEvidence: WithParts[] = []
                                 try {
                                     const subAgentMessages = await fetchSessionMessages(
                                         client,
                                         subAgentSessionId,
                                     )
                                     subAgentResultText = buildSubagentResultText(subAgentMessages)
+                                    subAgentMessagesForEvidence = subAgentMessages
                                 } catch {
                                     subAgentResultText = ""
                                 }
@@ -180,6 +194,15 @@ export async function appendProtectedTools(
                                     output = mergeSubagentResult(
                                         part.state.output,
                                         subAgentResultText,
+                                    )
+                                    observeProtectedChild(
+                                        evidence,
+                                        messageId,
+                                        part,
+                                        subAgentSessionId,
+                                        subAgentMessagesForEvidence,
+                                        subAgentResultText,
+                                        output,
                                     )
                                 }
                             }

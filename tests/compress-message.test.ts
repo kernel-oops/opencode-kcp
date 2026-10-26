@@ -283,6 +283,7 @@ test("compress message mode appends protected prompt info", async () => {
         /The following protected prompt information was included in this conversation verbatim:/,
     )
     assert.match(block?.summary || "", /Always preserve release checklist\./)
+    assert.equal(block?.originalSummaryHash, undefined)
 })
 
 test("compress message mode ignores protect tags on ignored user messages", async () => {

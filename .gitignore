@@ -38,6 +38,7 @@ lib/prompts/**/*.generated.ts
 
 # Tests
 tests/results/
+.impl-private/
 notes/
 test-update.ts
 

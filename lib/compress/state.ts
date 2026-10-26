@@ -1,6 +1,7 @@
 import type { CompressionBlock, PruneMessagesState, SessionState } from "../state"
 import { formatBlockRef, formatMessageIdTag, type IdFormat } from "../message-ids"
 import type { AppliedCompressionResult, CompressionStateInput, SelectionResolution } from "./types"
+import { summaryHash } from "./summary"
 
 export const COMPRESSED_BLOCK_HEADER = "[Compressed conversation section]"
 
@@ -13,6 +14,35 @@ export function allocateBlockId(state: SessionState): number {
 
     state.prune.messages.nextBlockId = next + 1
     return next
+}
+
+/**
+ * Block IDs that the next `count` allocateBlockId calls will return, without advancing
+ * state. Lets compression count every wrapped summary before mutating anything.
+ */
+export function peekBlockIds(state: SessionState, count: number): number[] {
+    const next = state.prune.messages.nextBlockId
+    const first = Number.isInteger(next) && next >= 1 ? next : 1
+    return Array.from({ length: count }, (_, index) => first + index)
+}
+
+/**
+ * Throws before any mutation if, while counts were awaited, the session state was reset or
+ * restored (replacing `prune`) or block allocation moved.
+ */
+export function assertPlannedBlockIds(
+    state: SessionState,
+    prune: PruneMessagesState,
+    planned: number[],
+): void {
+    if (
+        state.prune.messages !== prune ||
+        (planned.length > 0 && peekBlockIds(state, 1)[0] !== planned[0])
+    ) {
+        throw new Error(
+            "DCP compression state changed while counting tokens; nothing was compressed",
+        )
+    }
 }
 
 export function allocateRunId(state: SessionState): number {
@@ -138,6 +168,17 @@ export function applyCompressionState(
         effectiveToolIds: [...effectiveToolIds],
         createdAt,
         summary,
+        ...(input.protectedChildEvidence === undefined
+            ? {}
+            : {
+                  protectedChildEvidence: {
+                      ...input.protectedChildEvidence,
+                      entries: input.protectedChildEvidence.entries.map((entry) => ({ ...entry })),
+                  },
+              }),
+        ...(input.originalSummary === undefined
+            ? {}
+            : { originalSummaryHash: summaryHash(input.originalSummary) }),
     }
 
     messagesState.blocksById.set(blockId, block)

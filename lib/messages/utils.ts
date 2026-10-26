@@ -3,11 +3,13 @@ import type { SessionState, WithParts } from "../state"
 import { isMessageCompacted } from "../state/utils"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import type { IdFormat } from "../message-ids"
+import { transformSubagentResultOutput } from "../subagents/subagent-results"
 
 const SUMMARY_ID_HASH_LENGTH = 16
 const DCP_BLOCK_ID_TAG_REGEX = /(<dcp-message-id(?=[\s>])[^>]*>)b\d+(<\/dcp-message-id>)/g
-const DCP_PAIRED_TAG_REGEX = /<dcp[^>]*>[\s\S]*?<\/dcp[^>]*>/gi
-const DCP_UNPAIRED_TAG_REGEX = /<\/?dcp[^>]*>/gi
+// An unfinished tag example must not borrow a later tag's closing angle bracket.
+const DCP_PAIRED_TAG_REGEX = /<dcp[^<>]*>[\s\S]*?<\/dcp[^<>]*>/gi
+const DCP_UNPAIRED_TAG_REGEX = /<\/?dcp[^<>]*>/gi
 const INJECTED_MESSAGE_ID_SUFFIX_REGEX = /(?<=\n)<dcp-message-id[^>]*>m\d+<\/dcp-message-id>\s*$/
 const HALLUCINATED_PARAMETER_SUFFIX_REGEX = /(?<=\n)m\d+<\/parameter>\s*$/
 const COMPACT_TAG_REGEX = /@(?:[1-9]\d*|b[1-9]\d*|blocked)@(?:[ \t]+\[(?:low|medium|high)\])?/gi
@@ -189,7 +191,10 @@ export const stripHallucinations = (messages: WithParts[], format: IdFormat = "x
                 part.state?.status === "completed" &&
                 typeof part.state.output === "string"
             ) {
-                part.state.output = stripHallucinationsFromString(part.state.output, format)
+                const clean = (text: string) => stripHallucinationsFromString(text, format)
+                part.state.output = ["task", "subagent"].includes(part.tool)
+                    ? transformSubagentResultOutput(part.state.output, clean)
+                    : clean(part.state.output)
             }
         }
     }

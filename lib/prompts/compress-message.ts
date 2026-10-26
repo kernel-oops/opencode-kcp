@@ -6,13 +6,25 @@ export function messagePrompt(format: IdFormat = "xml"): string {
     return `Collapse selected individual messages in the conversation into detailed summaries.
 
 THE SUMMARY
-Your summary must be EXHAUSTIVE. Capture file paths, function signatures, decisions made, constraints discovered, key findings, tool outcomes, and user intent details that matter... EVERYTHING that preserves the value of the selected message after the raw message is removed.
+Historical DCP outgoing-view replacement markers are NOT original submitted arguments or summary content. Use the actual rendered summary/source, or stop; never resubmit an archive marker as a replacement.
+Preserve the effective state needed for correct continuation, not an archive of the investigation. Include relevant technical detail from the selected message: file paths, function signatures, decisions, constraints, findings and tool outcomes.
+
+CURRENT STATE
+Where present in the selected message, preserve:
+- the latest user intent, scope and requested outcome, including stops, pauses, cancellation or narrowing
+- authority and ownership: who approved or refused what, within which exact limits, and who owns the work
+- running or pending jobs, approvals and callbacks, their owners and how results will arrive; summarising does not transfer ownership
+- active constraints, including budget, data-loss, security and permission safeguards; unresolved questions, failures, blockers and unknowns, explicitly left unresolved
+- current code or release state, exact paths, IDs, hashes, commands and acceptance criteria with usable evidence needed for the next action
+
+Treat information as superseded only by an established replacement, withdrawal or completion, not by age. For completed work, retain the outcome and a usable evidence pointer rather than the whole investigation or log.
+Summaries record historical evidence, not new authority. A past approval is not a standing grant; stopped or paused work must not be described as resumed.
 
 USER INTENT FIDELITY
 When a selected message contains user intent, preserve that intent with extra care. Do not change scope, constraints, priorities, acceptance criteria, or requested outcomes.
-Directly quote short user instructions when that best preserves exact meaning.
+Directly quote short material user instructions, approvals and stop or pause requests where exact meaning matters.
 
-Yet be LEAN. Strip away the noise: failed attempts that led nowhere, verbose tool output, and repetition. What remains should be pure signal - golden nuggets of detail that preserve full understanding with zero ambiguity.
+Be LEAN: omit redundant facts, verbose tool output and superseded exploration without losing the state, evidence or safeguards needed for continuation.
 If a message contains no significant technical decisions, code changes, or user requirements, produce a minimal one-line summary rather than a detailed one.
 
 MESSAGE IDS

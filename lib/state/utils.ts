@@ -1,3 +1,7 @@
+import {
+    childCaptureLineageMatches,
+    validChildEvidence,
+} from "../compress/protected-child-evidence"
 import type {
     CompressionBlock,
     PruneMessagesState,
@@ -8,6 +12,7 @@ import type {
 import { isIgnoredUserMessage, messageHasCompress } from "../messages/query"
 import { isMessageWithInfo } from "../messages/shape"
 import { countTokens } from "../token-utils"
+import { isDeepStrictEqual } from "node:util"
 
 export const isMessageCompacted = (state: SessionState, msg: WithParts): boolean => {
     if (!isMessageWithInfo(msg)) {
@@ -106,6 +111,7 @@ export function loadPruneMap(obj?: Record<string, number>): Map<string, number> 
 
 export function createPruneMessagesState(): PruneMessagesState {
     return {
+        visibleBlockIds: new Set<number>(),
         byMessageId: new Map<string, PrunedMessageEntry>(),
         blocksById: new Map<number, CompressionBlock>(),
         activeBlockIds: new Set<number>(),
@@ -115,9 +121,9 @@ export function createPruneMessagesState(): PruneMessagesState {
     }
 }
 
-export function loadPruneMessagesState(
+export async function loadPruneMessagesState(
     persisted?: PersistedPruneMessagesState,
-): PruneMessagesState {
+): Promise<PruneMessagesState> {
     const state = createPruneMessagesState()
     if (!persisted || typeof persisted !== "object") {
         return state
@@ -205,7 +211,7 @@ export function loadPruneMessagesState(
                     typeof block.summaryTokens === "number" && Number.isFinite(block.summaryTokens)
                         ? Math.max(0, block.summaryTokens)
                         : typeof block.summary === "string"
-                          ? countTokens(block.summary)
+                          ? await countTokens(block.summary)
                           : 0,
                 durationMs:
                     typeof block.durationMs === "number" && Number.isFinite(block.durationMs)
@@ -243,6 +249,25 @@ export function loadPruneMessagesState(
                         ? block.deactivatedByBlockId
                         : undefined,
                 summary: typeof block.summary === "string" ? block.summary : "",
+                ...(block.protectedChildEvidence === undefined
+                    ? {}
+                    : {
+                          protectedChildEvidence: validChildEvidence(
+                              block.protectedChildEvidence,
+                              block,
+                          )
+                              ? {
+                                    ...block.protectedChildEvidence,
+                                    entries: block.protectedChildEvidence.entries.map((entry) => ({
+                                        ...entry,
+                                    })),
+                                }
+                              : { version: 1 as const, complete: false, entries: [] },
+                      }),
+                ...(typeof block.originalSummaryHash === "string" &&
+                /^[a-f0-9]{64}$/.test(block.originalSummaryHash)
+                    ? { originalSummaryHash: block.originalSummaryHash }
+                    : {}),
             })
         }
     }
@@ -285,6 +310,22 @@ export function loadPruneMessagesState(
         }
     }
 
+    for (const block of state.blocksById.values()) {
+        if (block.protectedChildEvidence && !childCaptureLineageMatches(block, state.blocksById))
+            block.protectedChildEvidence = { version: 1, complete: false, entries: [] }
+    }
+
+    // Grant proof only to records which survived validation without alteration.
+    state.savedBlockSnapshots = new Map(
+        [...state.blocksById]
+            .filter(([id, block]) =>
+                isDeepStrictEqual(
+                    JSON.parse(JSON.stringify(block)),
+                    persisted.blocksById?.[String(id)],
+                ),
+            )
+            .map(([id, block]) => [id, JSON.stringify(block)]),
+    )
     return state
 }
 
@@ -329,6 +370,7 @@ export function getActiveSummaryTokenUsage(state: SessionState): number {
 }
 
 export function resetOnCompaction(state: SessionState): void {
+    state.lowYield = null
     state.toolParameters.clear()
     state.prune.tools = new Map<string, number>()
     state.prune.messages = createPruneMessagesState()

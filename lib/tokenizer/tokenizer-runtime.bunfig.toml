@@ -1,0 +1,6 @@
+# An explicit config isolates ancestor bunfigs; Bun 1.3 rejects an empty preload array.
+env = false
+telemetry = false
+
+[install]
+auto = "disable"

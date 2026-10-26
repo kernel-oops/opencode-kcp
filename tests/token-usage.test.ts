@@ -298,3 +298,64 @@ test("isContextOverLimits does not extend the max threshold when summaryBuffer i
 
     assert.equal(overLimit.overMaxLimit, true)
 })
+
+test("isContextOverLimits uses exact model summaryBuffer overrides and global fallback", () => {
+    const messages = buildCompactedMessages()
+    messages.push(buildPostCompactionAssistantMessage())
+
+    const state = createSessionState()
+    state.lastCompaction = 2
+    const storedSummary = wrapCompressedSummary(7, repeatedWord("summary", 120))
+    state.prune.messages.blocksById.set(7, createActiveBlock(7, storedSummary, 1000))
+    state.prune.messages.activeBlockIds.add(7)
+
+    const threshold = 3000
+    const config = buildConfig(threshold, 1)
+    config.compress.summaryBuffer = false
+
+    const enabled = isContextOverLimits(
+        {
+            ...config,
+            compress: { ...config.compress, modelSummaryBuffer: { "provider/model": true } },
+        },
+        state,
+        "provider",
+        "model",
+        messages,
+    )
+    assert.equal(enabled.overMaxLimit, false)
+
+    const disabled = isContextOverLimits(
+        {
+            ...config,
+            compress: {
+                ...config.compress,
+                summaryBuffer: true,
+                modelSummaryBuffer: { "provider/model": false },
+            },
+        },
+        state,
+        "provider",
+        "model",
+        messages,
+    )
+    assert.equal(disabled.overMaxLimit, true)
+
+    const fallback = isContextOverLimits(config, state, "provider", "other-model", messages)
+    assert.equal(fallback.overMaxLimit, true)
+
+    const malformedOverride = isContextOverLimits(
+        {
+            ...config,
+            compress: {
+                ...config.compress,
+                modelSummaryBuffer: { "provider/model": "false" as unknown as boolean },
+            },
+        },
+        state,
+        "provider",
+        "model",
+        messages,
+    )
+    assert.equal(malformedOverride.overMaxLimit, true)
+})

@@ -19,6 +19,10 @@ const requiredRepoFiles = [
     "dist/tui.d.ts",
     "tui.tsx",
     "server.js",
+    "lib/tokenizer/tokenizer-child.js",
+    "lib/tokenizer/tokenizer-worker.js",
+    "lib/tokenizer/tokenizer-runtime.bunfig.toml",
+    "lib/tokenizer/tsconfig.json",
     "README.md",
     "LICENSE",
 ]
@@ -30,11 +34,20 @@ const requiredTarballFiles = [
     "dist/tui.d.ts",
     "tui.tsx",
     "server.js",
+    "lib/tokenizer/tokenizer-child.js",
+    "lib/tokenizer/tokenizer-worker.js",
+    "lib/tokenizer/tokenizer-runtime.bunfig.toml",
+    "lib/tokenizer/tsconfig.json",
     "README.md",
     "LICENSE",
 ]
 
 const forbiddenTarballPatterns = [
+    /(?:^|\/)(?:release|\.qualification|\.impl-private|node_modules|\.opencode|\.config|\.cache|\.local|home|cache|fixtures|config)(?:\/|$)/i,
+    /(?:^|\/)LOCAL-PROVENANCE\.json$/i,
+    /(?:^|\/)(?:auth|credentials|tokens|secrets)\.jsonc?$/i,
+    /(?:^|\/)\.env(?:[./]|$)/i,
+    /\.(?:db|sqlite|sqlite3|log|tgz|zip|gz|tar)(?:[.-].*)?$/i,
     /^node_modules\//,
     /^index\.ts$/,
     /^tests\//,
@@ -46,6 +59,33 @@ const forbiddenTarballPatterns = [
     /^package-lock\.json$/,
     /^tsconfig\.json$/,
 ]
+
+const allowedTarballRoots = new Set([
+    "package.json",
+    "dist",
+    "lib",
+    "server.js",
+    "tui.tsx",
+    "dcp.schema.json",
+    "README.md",
+    "LICENSE",
+])
+
+export function assertPackedFiles(packedPaths) {
+    for (const required of requiredTarballFiles) {
+        if (!packedPaths.includes(required)) {
+            throw new Error(`packed tarball is missing ${required}`)
+        }
+    }
+    for (const file of packedPaths) {
+        if (
+            !allowedTarballRoots.has(file.split("/")[0]) ||
+            forbiddenTarballPatterns.some((pattern) => pattern.test(file))
+        ) {
+            throw new Error(`packed tarball contains forbidden path ${file}`)
+        }
+    }
+}
 
 const packageInfoCache = new Map()
 
@@ -177,7 +217,13 @@ function packageLooksCommonJs(pkg) {
 }
 
 function validateRuntimeImportGraph() {
-    const pending = [path.join(root, "index.ts"), path.join(root, "tui.tsx")]
+    // The tokenizer sidecars are spawned, not imported, so list them explicitly.
+    const pending = [
+        path.join(root, "index.ts"),
+        path.join(root, "tui.tsx"),
+        path.join(root, "lib/tokenizer/tokenizer-child.js"),
+        path.join(root, "lib/tokenizer/tokenizer-worker.js"),
+    ]
     const seen = new Set()
 
     while (pending.length > 0) {
@@ -213,7 +259,7 @@ function validateRuntimeImportGraph() {
 }
 
 function validatePackedFiles() {
-    const output = execFileSync("npm", ["pack", "--dry-run", "--json"], {
+    const output = execFileSync("npm", ["pack", "--ignore-scripts", "--dry-run", "--json"], {
         cwd: root,
         encoding: "utf8",
     })
@@ -225,24 +271,21 @@ function validatePackedFiles() {
     }
 
     const packedPaths = result.files.map((file) => file.path)
-    for (const required of requiredTarballFiles) {
-        if (!packedPaths.includes(required)) {
-            fail(`packed tarball is missing ${required}`)
+    assertPackedFiles(packedPaths)
+    for (const file of packedPaths.filter((name) => /(?:\.map|\.d\.ts)$/.test(name))) {
+        const contents = readFileSync(path.join(root, file), "utf8")
+        if (/\/(?:mnt\/crypt|home\/(?:opencode|syncthing|marc))\//.test(contents)) {
+            fail(`private absolute path in packed declaration or map ${file}`)
         }
-    }
-
-    const forbidden = packedPaths.find((file) =>
-        forbiddenTarballPatterns.some((pattern) => pattern.test(file)),
-    )
-    if (forbidden) {
-        fail(`packed tarball contains forbidden path ${forbidden}`)
     }
 
     console.log(`package verification passed for ${result.name}@${result.version}`)
     console.log(`tarball entries: ${result.entryCount}`)
 }
 
-assertRepoFilesExist()
-assertPackageJsonShape()
-validateRuntimeImportGraph()
-validatePackedFiles()
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    assertRepoFilesExist()
+    assertPackageJsonShape()
+    validateRuntimeImportGraph()
+    validatePackedFiles()
+}

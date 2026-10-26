@@ -4,6 +4,11 @@ import type { PromptStore } from "../prompts/store"
 import type { CompressionBlock, CompressionMode, SessionState, WithParts } from "../state"
 
 export interface ToolContext {
+    /** Supported adapter opt-in, separate from native argument fingerprints. */
+    supportsRewrite?: true
+    rewritePolicy?: Pick<SessionState, "compressPermission" | "isSubAgent">
+    /** V2 alone needs an exact pre-expansion correlation for native outgoing inputs. */
+    nativeInputProof?: true
     client: any
     state: SessionState
     logger: Logger
@@ -12,12 +17,14 @@ export interface ToolContext {
 }
 
 export interface CompressRangeEntry {
+    rewrite?: boolean
     startId: string
     endId: string
     summary: string
 }
 
 export interface CompressRangeToolArgs {
+    minimumReductionPercent?: number
     topic: string
     content: CompressRangeEntry[]
 }
@@ -29,6 +36,7 @@ export interface CompressMessageEntry {
 }
 
 export interface CompressMessageToolArgs {
+    minimumReductionPercent?: number
     topic: string
     content: CompressMessageEntry[]
 }
@@ -96,6 +104,8 @@ export interface AppliedCompressionResult {
 }
 
 export interface CompressionStateInput {
+    protectedChildEvidence?: import("../state").ProtectedChildEvidence
+    originalSummary?: string
     topic: string
     batchTopic: string
     startId: string

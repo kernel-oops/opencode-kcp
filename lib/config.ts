@@ -27,6 +27,7 @@ export interface CompressConfig {
     permission: Permission
     showCompression: boolean
     summaryBuffer: boolean
+    modelSummaryBuffer?: Record<string, boolean>
     maxContextLimit: number | `${number}%`
     minContextLimit: number | `${number}%`
     modelMaxLimits?: Record<string, number | `${number}%`>
@@ -85,6 +86,8 @@ export interface PluginConfig {
 
 type CompressOverride = Partial<CompressConfig>
 
+const MODEL_SUMMARY_BUFFER_REF_PATTERN = /^[^\s/]+\/[^\s]+$/
+
 const DEFAULT_PROTECTED_TOOLS = [
     "task",
     "skill",
@@ -126,6 +129,7 @@ export const VALID_CONFIG_KEYS = new Set([
     "compress.permission",
     "compress.showCompression",
     "compress.summaryBuffer",
+    "compress.modelSummaryBuffer",
     "compress.maxContextLimit",
     "compress.minContextLimit",
     "compress.modelMaxLimits",
@@ -152,8 +156,12 @@ function getConfigKeyPaths(obj: Record<string, any>, prefix = ""): string[] {
         const fullKey = prefix ? `${prefix}.${key}` : key
         keys.push(fullKey)
 
-        // model*Limits are dynamic maps keyed by providerID/modelID; do not recurse into arbitrary IDs.
-        if (fullKey === "compress.modelMaxLimits" || fullKey === "compress.modelMinLimits") {
+        // Per-model maps are keyed by providerID/modelID; do not recurse into arbitrary IDs.
+        if (
+            fullKey === "compress.modelMaxLimits" ||
+            fullKey === "compress.modelMinLimits" ||
+            fullKey === "compress.modelSummaryBuffer"
+        ) {
             continue
         }
 
@@ -522,6 +530,33 @@ export function validateConfigTypes(config: Record<string, any>): ValidationErro
 
             validateModelLimits("compress.modelMaxLimits", compress.modelMaxLimits)
             validateModelLimits("compress.modelMinLimits", compress.modelMinLimits)
+            if (compress.modelSummaryBuffer !== undefined) {
+                const map = compress.modelSummaryBuffer
+                if (typeof map !== "object" || map === null || Array.isArray(map)) {
+                    errors.push({
+                        key: "compress.modelSummaryBuffer",
+                        expected: "Record<string, boolean>",
+                        actual: map === null ? "null" : Array.isArray(map) ? "array" : typeof map,
+                    })
+                } else {
+                    for (const [ref, value] of Object.entries(map)) {
+                        if (!MODEL_SUMMARY_BUFFER_REF_PATTERN.test(ref)) {
+                            errors.push({
+                                key: `compress.modelSummaryBuffer.${ref}`,
+                                expected: "qualified providerID/modelID without whitespace",
+                                actual: JSON.stringify(ref),
+                            })
+                        }
+                        if (typeof value !== "boolean") {
+                            errors.push({
+                                key: `compress.modelSummaryBuffer.${ref}`,
+                                expected: "boolean",
+                                actual: JSON.stringify(value),
+                            })
+                        }
+                    }
+                }
+            }
 
             const validValues = ["ask", "allow", "deny"]
             if (compress.permission !== undefined && !validValues.includes(compress.permission)) {
@@ -855,6 +890,9 @@ function mergeCompress(
         permission: override.permission ?? base.permission,
         showCompression: override.showCompression ?? base.showCompression,
         summaryBuffer: override.summaryBuffer ?? base.summaryBuffer,
+        modelSummaryBuffer: override.modelSummaryBuffer
+            ? { ...base.modelSummaryBuffer, ...override.modelSummaryBuffer }
+            : base.modelSummaryBuffer,
         maxContextLimit: override.maxContextLimit ?? base.maxContextLimit,
         minContextLimit: override.minContextLimit ?? base.minContextLimit,
         modelMaxLimits: override.modelMaxLimits ?? base.modelMaxLimits,
@@ -924,6 +962,7 @@ function deepCloneConfig(config: PluginConfig): PluginConfig {
             ...config.compress,
             modelMaxLimits: { ...config.compress.modelMaxLimits },
             modelMinLimits: { ...config.compress.modelMinLimits },
+            modelSummaryBuffer: { ...config.compress.modelSummaryBuffer },
             protectedTools: [...config.compress.protectedTools],
         },
         strategies: {
@@ -958,6 +997,39 @@ function mergeLayer(config: PluginConfig, data: Record<string, any>): PluginConf
         ],
         compress: mergeCompress(config.compress, data.compress as CompressOverride),
         strategies: mergeStrategies(config.strategies, data.strategies as any),
+    }
+}
+
+function filterModelSummaryBuffer(data: Record<string, any>): Record<string, any> {
+    const compress = data.compress
+    if (
+        !compress ||
+        typeof compress !== "object" ||
+        Array.isArray(compress) ||
+        !Object.prototype.hasOwnProperty.call(compress, "modelSummaryBuffer")
+    ) {
+        return data
+    }
+
+    const { modelSummaryBuffer, ...otherCompress } = compress
+    if (
+        typeof modelSummaryBuffer !== "object" ||
+        modelSummaryBuffer === null ||
+        Array.isArray(modelSummaryBuffer)
+    ) {
+        return { ...data, compress: otherCompress }
+    }
+
+    const validEntries: Record<string, boolean> = {}
+    for (const [ref, value] of Object.entries(modelSummaryBuffer)) {
+        if (MODEL_SUMMARY_BUFFER_REF_PATTERN.test(ref) && typeof value === "boolean") {
+            validEntries[ref] = value
+        }
+    }
+
+    return {
+        ...data,
+        compress: { ...otherCompress, modelSummaryBuffer: validEntries },
     }
 }
 
@@ -1010,7 +1082,7 @@ export function getConfig(ctx: ConfigContext): PluginConfig {
         }
 
         showConfigWarnings(ctx, layer.path, result.data, layer.isProject)
-        config = mergeLayer(config, result.data)
+        config = mergeLayer(config, filterModelSummaryBuffer(result.data))
     }
 
     return config

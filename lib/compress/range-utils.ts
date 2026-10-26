@@ -1,4 +1,6 @@
 import type { CompressionBlock, SessionState } from "../state"
+import { validateMinimumReductionPercent } from "./low-yield"
+import { validateSummaryContent } from "./summary"
 import { resolveAnchorMessageId, resolveBoundaryIds, resolveSelection } from "./search"
 import type { IdFormat } from "../message-ids"
 import type {
@@ -12,7 +14,29 @@ import type {
 
 const BLOCK_PLACEHOLDER_REGEX = /\(b(\d+)\)|\{block_(\d+)\}/gi
 
+/** Inspect submitted flags before any live preparation; never strip an unsupported flag. */
+export function classifyRewrite(input: unknown, supported: boolean): boolean {
+    const content = (input as { content?: unknown })?.content
+    if (!Array.isArray(content)) return false
+    let rewrites = 0
+    for (const entry of content) {
+        if (
+            !entry ||
+            typeof entry !== "object" ||
+            !Object.prototype.hasOwnProperty.call(entry, "rewrite")
+        )
+            continue
+        if (!supported) throw new Error("rewrite is unsupported in this mode")
+        if (typeof entry.rewrite !== "boolean") throw new Error("rewrite must be boolean")
+        if (entry.rewrite) rewrites++
+    }
+    if (rewrites && rewrites !== content.length)
+        throw new Error("Mixed ordinary/rewrite batches are forbidden")
+    return rewrites > 0
+}
+
 export function validateArgs(args: CompressRangeToolArgs): void {
+    validateMinimumReductionPercent(args.minimumReductionPercent)
     if (typeof args.topic !== "string" || args.topic.trim().length === 0) {
         throw new Error("topic is required and must be a non-empty string")
     }
@@ -36,15 +60,18 @@ export function validateArgs(args: CompressRangeToolArgs): void {
         if (typeof entry?.summary !== "string" || entry.summary.trim().length === 0) {
             throw new Error(`${prefix}.summary is required and must be a non-empty string`)
         }
+        validateSummaryContent(entry.summary, prefix)
     }
 }
 
-export function resolveRanges(
+export async function resolveRanges(
     args: CompressRangeToolArgs,
     searchContext: SearchContext,
     state: SessionState,
-): ResolvedRangeCompression[] {
-    return args.content.map((entry, index) => {
+): Promise<ResolvedRangeCompression[]> {
+    // Sequential: preserves entry order and validation order, one count at a time.
+    const plans: ResolvedRangeCompression[] = []
+    for (const [index, entry] of args.content.entries()) {
         const normalizedEntry = {
             startId: entry.startId.trim(),
             endId: entry.endId.trim(),
@@ -57,15 +84,16 @@ export function resolveRanges(
             normalizedEntry.startId,
             normalizedEntry.endId,
         )
-        const selection = resolveSelection(searchContext, startReference, endReference)
+        const selection = await resolveSelection(searchContext, startReference, endReference)
 
-        return {
+        plans.push({
             index,
             entry: normalizedEntry,
             selection,
             anchorMessageId: resolveAnchorMessageId(startReference),
-        }
-    })
+        })
+    }
+    return plans
 }
 
 export function validateNonOverlapping(plans: ResolvedRangeCompression[]): void {

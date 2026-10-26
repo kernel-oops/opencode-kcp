@@ -5,6 +5,7 @@ import {
     buildSubagentResultText,
     getSubAgentId,
     mergeSubagentResult,
+    transformSubagentResultOutput,
 } from "../../subagents/subagent-results"
 import { stripHallucinationsFromString } from "../utils"
 
@@ -44,9 +45,12 @@ export const injectExtendedSubAgentResults = async (
             const cachedResult = state.subAgentResultCache.get(part.callID)
             if (cachedResult !== undefined) {
                 if (cachedResult) {
-                    part.state.output = stripHallucinationsFromString(
-                        mergeSubagentResult(part.state.output, cachedResult),
-                        state.idFormat,
+                    part.state.output = mergeSubagentResult(
+                        transformSubagentResultOutput(part.state.output, (text) =>
+                            stripHallucinationsFromString(text, state.idFormat),
+                        ),
+                        cachedResult,
+                        (text) => stripHallucinationsFromString(text, state.idFormat),
                     )
                 }
                 continue
@@ -75,9 +79,14 @@ export const injectExtendedSubAgentResults = async (
             }
 
             state.subAgentResultCache.set(part.callID, subAgentResultText)
-            part.state.output = stripHallucinationsFromString(
-                mergeSubagentResult(part.state.output, subAgentResultText),
-                state.idFormat,
+            // Frame the caller-visible representation, not lengths that cleanup
+            // would invalidate. Keep the raw selected final in the shared cache.
+            part.state.output = mergeSubagentResult(
+                transformSubagentResultOutput(part.state.output, (text) =>
+                    stripHallucinationsFromString(text, state.idFormat),
+                ),
+                subAgentResultText,
+                (text) => stripHallucinationsFromString(text, state.idFormat),
             )
         }
     }

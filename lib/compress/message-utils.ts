@@ -1,4 +1,7 @@
 import type { PluginConfig } from "../config"
+import { validateMinimumReductionPercent } from "./low-yield"
+import { validateSummaryContent } from "./summary"
+import { classifyRewrite } from "./range-utils"
 import type { SessionState } from "../state"
 import { parseBoundaryId, type IdFormat } from "../message-ids"
 import { isIgnoredUserMessage, isProtectedUserMessage } from "../messages/query"
@@ -28,6 +31,8 @@ class SoftIssue extends Error {
 }
 
 export function validateArgs(args: CompressMessageToolArgs): void {
+    classifyRewrite(args, false)
+    validateMinimumReductionPercent(args.minimumReductionPercent)
     if (typeof args.topic !== "string" || args.topic.trim().length === 0) {
         throw new Error("topic is required and must be a non-empty string")
     }
@@ -51,6 +56,7 @@ export function validateArgs(args: CompressMessageToolArgs): void {
         if (typeof entry?.summary !== "string" || entry.summary.trim().length === 0) {
             throw new Error(`${prefix}.summary is required and must be a non-empty string`)
         }
+        validateSummaryContent(entry.summary, prefix)
     }
 }
 
@@ -148,12 +154,12 @@ function groupSkippedIssues(issues: SkippedIssue[], format: IdFormat): string[] 
     })
 }
 
-export function resolveMessages(
+export async function resolveMessages(
     args: CompressMessageToolArgs,
     searchContext: SearchContext,
     state: SessionState,
     config: PluginConfig,
-): ResolvedMessageCompressionsResult {
+): Promise<ResolvedMessageCompressionsResult> {
     const issues: SkippedIssue[] = []
     const plans: ResolvedMessageCompression[] = []
     const seenMessageIds = new Set<string>()
@@ -166,7 +172,7 @@ export function resolveMessages(
         }
 
         try {
-            const plan = resolveMessage(
+            const plan = await resolveMessage(
                 {
                     ...entry,
                     messageId: normalizedMessageId,
@@ -194,12 +200,12 @@ export function resolveMessages(
     }
 }
 
-function resolveMessage(
+async function resolveMessage(
     entry: CompressMessageEntry,
     searchContext: SearchContext,
     state: SessionState,
     config: PluginConfig,
-): ResolvedMessageCompression {
+): Promise<ResolvedMessageCompression> {
     const blocked = state.idFormat === "compact" ? "@blocked@" : "BLOCKED"
     if (entry.messageId.toLowerCase() === blocked.toLowerCase()) {
         throw new SoftIssue("blocked", blocked, "protected message")
@@ -232,8 +238,6 @@ function resolveMessage(
         parsed.ref,
         parsed.ref,
     )
-    const selection = resolveSelection(searchContext, startReference, endReference)
-
     if (isProtectedUserMessage(config, rawMessage)) {
         throw new SoftIssue("protected", parsed.ref, "protected message")
     }
@@ -242,6 +246,9 @@ function resolveMessage(
     if (pruneEntry && pruneEntry.activeBlockIds.length > 0) {
         throw new SoftIssue("already-compressed", parsed.ref, "already compressed")
     }
+
+    // Count only entries that passed soft validation; counting failures are hard errors.
+    const selection = await resolveSelection(searchContext, startReference, endReference)
 
     return {
         entry: {

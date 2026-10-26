@@ -136,9 +136,13 @@ export function isContextOverLimits(
     modelId: string | undefined,
     messages: WithParts[],
 ) {
-    const summaryTokenExtension = config.compress.summaryBuffer
-        ? getActiveSummaryTokenUsage(state)
-        : 0
+    const ref =
+        providerId !== undefined && modelId !== undefined ? `${providerId}/${modelId}` : undefined
+    const modelSummaryBuffer =
+        ref === undefined ? undefined : config.compress.modelSummaryBuffer?.[ref]
+    const summaryBuffer =
+        typeof modelSummaryBuffer === "boolean" ? modelSummaryBuffer : config.compress.summaryBuffer
+    const summaryTokenExtension = summaryBuffer ? getActiveSummaryTokenUsage(state) : 0
     const resolvedMaxContextLimit = resolveContextTokenLimit(
         config,
         state,
@@ -208,7 +212,7 @@ function buildMessagePriorityGuidance(
     return renderMessagePriorityGuidance(priorityLabel, refs)
 }
 
-function injectAnchoredNudge(message: WithParts, nudgeText: string): void {
+export function injectAnchoredNudge(message: WithParts, nudgeText: string): void {
     if (!nudgeText.trim()) {
         return
     }

@@ -12,7 +12,8 @@ export function buildCompressedBlockGuidance(state: SessionState): string {
     return [
         "Compressed block context:",
         `- Active compressed blocks in this session: ${blockCount} (${blockList})`,
-        `- If your selected compression range includes any listed block, include each required placeholder exactly once in the summary using \`${state.idFormat === "compact" ? "@b1@" : "(bN)"}\`.`,
+        `- For ordinary range compression that includes a listed block, include each required placeholder exactly once using \`${state.idFormat === "compact" ? "@b1@" : "(bN)"}\`.`,
+        "- If the actual tool schema offers explicit rewrite, review visible active-summary prose for obsolete detail: use rewrite: true with both boundaries naming the same eligible active block, a shorter current-state summary and no placeholders; do not wrap/reinsert the old summary when replacing it.",
     ].join("\n")
 }
 

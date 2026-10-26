@@ -18,6 +18,8 @@ export const PRUNE_REASON_LABELS: Record<PruneReason, string> = {
 }
 
 interface CompressionNotificationEntry {
+    replacedBlockId?: number
+    previousSummaryTokens?: number
     blockId: number
     runId: number
     summary: string
@@ -244,9 +246,19 @@ export async function sendCompressNotification(
     const totalActiveSummaryTkns = getActiveSummaryTokenUsage(state)
     const totalGross = state.stats.totalPruneTokens + state.stats.pruneTokenCounter
     const notificationHeader = `▣ DCP | ${formatCompressionMetrics(totalGross, totalActiveSummaryTkns)}`
+    const rewrite = entries.every(
+        (entry) => entry.replacedBlockId !== undefined && entry.previousSummaryTokens !== undefined,
+    )
+    const previousSummaryTokens = entries.reduce(
+        (total, entry) => total + (entry.previousSummaryTokens ?? 0),
+        0,
+    )
+    const rewriteMetrics = `-${previousSummaryTokens} old summary tokens, +${summaryTokens} new summary tokens, ${previousSummaryTokens - summaryTokens} net DCP summary-token reduction; 0 new raw messages pruned`
 
     if (config.pruneNotification === "minimal") {
-        message = `${notificationHeader} — ${compressionLabel}`
+        message = rewrite
+            ? `▣ DCP | Rewrite #${entries[0]!.runId} — ${rewriteMetrics}`
+            : `${notificationHeader} — ${compressionLabel}`
     } else {
         message = notificationHeader
 
@@ -263,7 +275,9 @@ export async function sendCompressNotification(
             50,
         )
         message += `\n\n${progressBar}`
-        message += `\n▣ ${compressionLabel} ${formatCompressionMetrics(compressedTokens, summaryTokens)}`
+        message += rewrite
+            ? `\n▣ Rewrite #${entries[0]!.runId} ${rewriteMetrics}`
+            : `\n▣ ${compressionLabel} ${formatCompressionMetrics(compressedTokens, summaryTokens)}`
         message += `\n→ Topic: ${topic}`
         message += `\n→ Items: ${newlyCompressedMessageIds.length} messages`
         if (newlyCompressedToolIds.length > 0) {
