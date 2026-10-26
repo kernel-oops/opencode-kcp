@@ -59,16 +59,19 @@ Use the **built GitHub release asset**, not an npm registry name or a Git URL th
 The following Linux shell example installs release **v0.1.0** into a user-owned prefix. It does not change your OpenCode configuration automatically.
 
 ```bash
-mkdir -p "$HOME/.cache/opencode-kcp/v0.1.0"
-cd "$HOME/.cache/opencode-kcp/v0.1.0"
-curl --fail --location --remote-name \
-    https://github.com/kernel-oops/opencode-kcp/releases/download/v0.1.0/opencode-kcp-0.1.0.tgz
-curl --fail --location --remote-name \
-    https://github.com/kernel-oops/opencode-kcp/releases/download/v0.1.0/SHA256SUMS
-sha256sum --check SHA256SUMS
-npm install --prefix "$HOME/.local/share/opencode-kcp" --ignore-scripts \
-    "$PWD/opencode-kcp-0.1.0.tgz"
-printf '%s\n' "$HOME/.local/share/opencode-kcp/node_modules/opencode-kcp"
+(
+    set -eu
+    mkdir -p "$HOME/.cache/opencode-kcp/v0.1.0"
+    cd "$HOME/.cache/opencode-kcp/v0.1.0"
+    curl --fail --location --remote-name \
+        https://github.com/kernel-oops/opencode-kcp/releases/download/v0.1.0/opencode-kcp-0.1.0.tgz
+    curl --fail --location --remote-name \
+        https://github.com/kernel-oops/opencode-kcp/releases/download/v0.1.0/SHA256SUMS
+    sha256sum --check SHA256SUMS
+    npm install --prefix "$HOME/.local/share/opencode-kcp" --ignore-scripts \
+        "$PWD/opencode-kcp-0.1.0.tgz"
+    printf '%s\n' "$HOME/.local/share/opencode-kcp/node_modules/opencode-kcp"
+)
 ```
 
 Keep the printed absolute directory for the next steps. This is the qualified **local npm tarball + installed-directory** route; OpenCode's native registry-install pipeline is not claimed to have been exercised. Node **24.22.0** and npm **11.19.1** were used for qualification. Dependency lifecycle scripts are deliberately disabled.
