@@ -25,16 +25,17 @@ This arrangement ensures the project remains Open Source while providing a path 
 
 ## Development Setup
 
-Use Node.js and npm. From your checkout:
+Use Node.js 24.22.0 and npm 11.19.1. From your checkout:
 
 ```sh
-npm ci --legacy-peer-deps
+npm ci --ignore-scripts
 npm run build
 ```
 
-The install flag allows development against the different OpenTUI peer versions
-used by OpenCode V1 and V2. This also installs the bundled test logger's
-dependencies through the [tests/logger](tests/logger/) npm workspace.
+Peer resolution is ordinary; lifecycle scripts are deliberately disabled. The
+build is run explicitly. This also installs the bundled test logger's dependencies
+through the [tests/logger](tests/logger/) npm workspace. Renderer/Solid and genuine
+OpenCode SDKs provide development/host types, not the distributed runtime closure.
 
 Run the checks relevant to your changes before submitting a pull request:
 

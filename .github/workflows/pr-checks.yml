@@ -15,16 +15,20 @@ jobs:
 
         steps:
             - name: Checkout code
+              timeout-minutes: 2
               uses: actions/checkout@v4
 
             - name: Setup Node.js
+              timeout-minutes: 3
               uses: actions/setup-node@v4
               with:
                   node-version: "24.22.0"
 
-            - name: Check npm toolchain
+            - name: Pin npm toolchain
               timeout-minutes: 1
-              run: test "$(npm --version)" = "11.19.1"
+              run: |
+                  npm install --global npm@11.19.1 --ignore-scripts
+                  test "$(npm --version)" = "11.19.1"
 
             - name: Install dependencies
               timeout-minutes: 5
@@ -54,7 +58,22 @@ jobs:
               timeout-minutes: 2
               run: |
                   npm run verify:package
-                  npm pack --ignore-scripts --json
+                  mkdir -p "$RUNNER_TEMP/kcp-pack"
+                  npm pack --ignore-scripts --json --pack-destination "$RUNNER_TEMP/kcp-pack"
+
+            - name: Fresh runtime consumer
+              timeout-minutes: 4
+              run: |
+                  consumer="$RUNNER_TEMP/kcp-consumer"
+                  mkdir -p "$consumer" "$RUNNER_TEMP/kcp-home" "$RUNNER_TEMP/kcp-cache" "$RUNNER_TEMP/kcp-tmp"
+                  printf '{"name":"kcp-ci-consumer","private":true,"type":"module"}\n' > "$consumer/package.json"
+                  export HOME="$RUNNER_TEMP/kcp-home"
+                  export XDG_CONFIG_HOME="$HOME/config" XDG_DATA_HOME="$HOME/data" XDG_STATE_HOME="$HOME/state" XDG_CACHE_HOME="$RUNNER_TEMP/kcp-cache" TMPDIR="$RUNNER_TEMP/kcp-tmp"
+                  export NPM_CONFIG_CACHE="$RUNNER_TEMP/kcp-cache/npm" NPM_CONFIG_USERCONFIG="$HOME/npmrc" NPM_CONFIG_GLOBALCONFIG="$HOME/global-npmrc"
+                  npm install --prefix "$consumer" --ignore-scripts "$RUNNER_TEMP"/kcp-pack/*.tgz
+                  npm audit --prefix "$consumer" --omit=dev --audit-level=high
+                  node --import tsx scripts/consumer-smoke.mjs "$consumer"
+                  DCP_PACKAGE_ENTRY="file://$consumer/node_modules/opencode-kcp/dist/index.js" node --import tsx --test --test-concurrency=2 tests/v2-rewrite.test.ts tests/v2-compress-inputs.test.ts
 
             - name: Security audit
               timeout-minutes: 2

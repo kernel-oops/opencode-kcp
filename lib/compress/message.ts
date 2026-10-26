@@ -1,4 +1,4 @@
-import { tool } from "@opencode-ai/plugin"
+import { tool } from "../tool"
 import { minimumReductionPercentSchema } from "./low-yield"
 import type { ToolContext } from "./types"
 import { countTokens } from "../token-utils"

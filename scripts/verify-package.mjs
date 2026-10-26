@@ -208,9 +208,14 @@ function findPackageInfo(packageName, importerPath) {
     }
 }
 
-function packageLooksCommonJs(pkg) {
+export function packageLooksCommonJs(pkg) {
     if (!pkg) return false
     if (pkg.type === "commonjs") return true
+
+    const imported = pkg.exports?.["."]?.import
+    if (typeof imported === "string" && pkg.type === "module" && imported.endsWith(".js")) {
+        return false
+    }
 
     const main = typeof pkg.main === "string" ? pkg.main : ""
     return /(?:^|\/)(cjs|umd)(?:\/|$)/.test(main) || main.endsWith(".cjs")

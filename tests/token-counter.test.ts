@@ -353,6 +353,7 @@ test("child supervisor kills itself on its own deadline and on stdin loss", asyn
 test("child dies when its parent host is SIGKILLed mid-count", async () => {
     const counterPath = fileURLToPath(new URL("../lib/token-counter.ts", import.meta.url))
     const dir = mkdtempSync(join(tmpdir(), "dcp-parent-kill-"))
+    writeFileSync(join(dir, "package.json"), '{"type":"module"}')
     const host = join(dir, "host.ts")
     writeFileSync(
         host,
@@ -369,9 +370,12 @@ setInterval(() => {}, 1000)
         stdio: ["ignore", "pipe", "inherit"],
     })
     const pid = Number(
-        await new Promise<string>((resolve) =>
-            parent.stdout!.once("data", (data) => resolve(String(data))),
-        ),
+        await new Promise<string>((resolve, reject) => {
+            parent.once("exit", (code) =>
+                reject(new Error(`fixture host exited before PID: ${code}`)),
+            )
+            parent.stdout!.once("data", (data) => resolve(String(data)))
+        }),
     )
     assert.ok(alive(pid))
     await sleep(200)
@@ -393,6 +397,7 @@ test("failed or disposed startup leaves no timer holding the host open", async (
                 ? mkdtempSync(join(tmpdir(), "dcp-missing-")) + "/"
                 : fakeSidecar(source)
         const host = join(mkdtempSync(join(tmpdir(), "dcp-startup-host-")), "host.ts")
+        writeFileSync(join(host, "..", "package.json"), '{"type":"module"}')
         // No process.exit: the host must end on its own once the counter is finished.
         writeFileSync(
             host,
@@ -539,6 +544,7 @@ export default { countTokens }
     )
     const text = "hello world"
     const hostDir = mkdtempSync(join(tmpdir(), "dcp-ancestor-host-"))
+    writeFileSync(join(hostDir, "package.json"), '{"type":"module"}')
     const host = join(hostDir, "host.ts")
     writeFileSync(
         host,

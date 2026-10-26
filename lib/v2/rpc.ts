@@ -1,4 +1,4 @@
-import { tool } from "@opencode-ai/plugin"
+import { tool } from "../tool"
 
 const z = tool.schema
 const session = z.object({ sessionID: z.string() })

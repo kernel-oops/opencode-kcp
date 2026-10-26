@@ -1,5 +1,5 @@
 import { SessionState, WithParts } from "./state"
-import { AssistantMessage, UserMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, UserMessage } from "@opencode-ai/sdk/v2"
 import { Logger } from "./logger"
 import { tokenCounter } from "./token-counter"
 import { getLastUserMessage } from "./messages/query"

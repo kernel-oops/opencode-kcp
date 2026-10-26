@@ -12,11 +12,10 @@ release is advertised here. Both legacy V1 and V2 adapters remain included.
 
 ## Installation
 
-**Packaging qualification is pending:** the inherited OpenTUI/Solid peer constraints
-currently prevent a clean default-peer source install. Do not use legacy-peer flags,
-force, or downgrade patched Solid to work around that conflict. The commands below
-describe the intended local workflow once those constraints are resolved; they are
-not a claim that this candidate has passed fresh-install acceptance.
+**Packaging qualification is pending:** ordinary peer source installation is
+supported with lifecycle scripts disabled. Do not use legacy-peer flags or force.
+Full installed-package and stock-host acceptance is separate from installation;
+the commands below are not a claim that every host/platform has been qualified.
 
 Build with Node 24.22.0 and npm 11.19.1 in a trusted source checkout:
 
@@ -64,12 +63,32 @@ installation explicitly after building and qualifying a new archive; do not expe
 upstream DCP updates to update KCP.
 
 The non-publishing PR workflow is prepared, not remotely executed or qualified.
-Its clean-install step currently exposes the peer conflict above. Fresh tarball
-consumer, exact tokenizer, and stock OpenCode 2.1.4 server/panel/manual-toggle
+Fresh tarball consumer, exact tokenizer, and stock OpenCode 2.1.4 server/panel/manual-toggle
 acceptance remain required before delivery. Stock integration is a local gate:
 use private HOME/XDG/cache/state, loopback-only rootless network isolation and a
 separate user cgroup capped at 4 GiB RAM, no swap and 300 seconds. Do not assume
 GitHub-hosted runners provide those capabilities, or substitute a live provider.
+
+### Runtime and declaration dependencies
+
+The runtime package uses the patched direct Zod validator, tokenizer and JSONC
+parser; the SDK identity helper is implemented locally with its real SDK type.
+OpenCode supplies TUI rendering/JSX at runtime. SDKs, renderer and Solid are
+development/host type inputs, not installed runtime requirements. The existing
+legacy SDK peer is optional, so a pure runtime consumer does not auto-install it.
+
+Published declarations are not self-contained: TypeScript consumers need the real
+`@opencode-ai/plugin`, `@opencode-ai/sdk` and `@opencode/plugin` contracts matching
+their host, plus the host's TUI types when inspecting TUI declarations. Do not
+replace these with ambient shims. The source graph unifies SDK Zod declarations
+with its direct patched validator through an actual dependency override. That
+override does not propagate to consumers; runtime safety must come from the
+consumer's actual small graph, not source overrides.
+
+Development OpenTUI 0.5.10 requires published Solid 1.9.12. Its actual Seroval and
+seroval-plugins leaves are scoped to patched 1.6.12, outside Solid's old declared
+leaf range. This is a tested bounded development binding, not patched Solid
+1.9.16 or a claim that every Solid SSR API is compatible.
 
 ## Upstream Project Status
 

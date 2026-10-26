@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode/plugin"
-import { tool, type ToolDefinition } from "@opencode-ai/plugin"
+import type { ToolDefinition } from "@opencode-ai/plugin"
+import { tool } from "../tool"
 import { getConfig } from "../config"
 import { Logger } from "../logger"
 import { PromptStore } from "../prompts/store"

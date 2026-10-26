@@ -4,7 +4,20 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import os from "node:os"
 import path from "node:path"
 import { test } from "node:test"
-import { assertPackedFiles } from "../scripts/verify-package.mjs"
+import { assertPackedFiles, packageLooksCommonJs } from "../scripts/verify-package.mjs"
+
+test("dual exports use the ESM import target rather than the CommonJS main", () => {
+    assert.equal(
+        packageLooksCommonJs({
+            type: "module",
+            main: "./index.cjs",
+            exports: { ".": { import: "./index.js", require: "./index.cjs" } },
+        }),
+        false,
+    )
+    assert.equal(packageLooksCommonJs({ main: "./index.cjs" }), true)
+    assert.equal(packageLooksCommonJs({ type: "commonjs", main: "./index.js" }), true)
+})
 
 test("real archive listing rejects private canaries and missing runtime files", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "kcp-pack-"))

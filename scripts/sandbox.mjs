@@ -169,7 +169,7 @@ async function main() {
         join(repo, "scripts/sandbox"),
     ])
     console.log(dcp === "local" ? "Building DCP and request logger…" : "Building request logger…")
-    if (!existsSync(join(repo, "node_modules"))) command("npm", ["ci", "--legacy-peer-deps"])
+    if (!existsSync(join(repo, "node_modules"))) command("npm", ["ci", "--ignore-scripts"])
     const packages = []
     const directories = [join(repo, "tests/logger")]
     if (dcp === "local") directories.unshift(repo)

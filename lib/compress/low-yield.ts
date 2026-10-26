@@ -1,4 +1,4 @@
-import { tool } from "@opencode-ai/plugin"
+import { tool } from "../tool"
 import type { SessionState } from "../state"
 
 export const DEFAULT_MINIMUM_REDUCTION_PERCENT = 10

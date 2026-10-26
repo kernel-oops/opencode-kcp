@@ -33,7 +33,7 @@
         "dev": "opencode plugin dev",
         "sandbox": "node scripts/sandbox.mjs",
         "typecheck": "tsc --noEmit && npm run typecheck --workspace=tests/logger",
-        "test": "node --import tsx --test tests/*.test.ts && npm test --workspace=tests/logger",
+        "test": "node -e \"require('node:fs').mkdirSync('.impl-private', { recursive: true })\" && node --import tsx --import ./tests/fixtures/jsonc-node-loader.mjs --test --test-concurrency=2 tests/*.test.ts && npm test --workspace=tests/logger",
         "format": "prettier --write .",
         "format:check": "prettier --check .",
         "dcp": "tsx scripts/print.ts"
@@ -52,25 +52,39 @@
     "peerDependencies": {
         "@opencode-ai/plugin": ">=1.18.29"
     },
+    "peerDependenciesMeta": {
+        "@opencode-ai/plugin": {
+            "optional": true
+        }
+    },
     "dependencies": {
-        "@opencode-ai/plugin": "^1.18.29",
         "@anthropic-ai/tokenizer": "^0.0.4",
-        "@opencode-ai/sdk": "^1.4.3",
-        "@opentui/core": "^0.4.5",
-        "@opentui/solid": "^0.4.5",
         "jsonc-parser": "^3.3.1",
-        "solid-js": "1.9.16"
+        "zod": "4.6.6"
     },
     "devDependencies": {
+        "@opencode-ai/plugin": "^1.18.29",
+        "@opencode-ai/sdk": "^1.4.3",
+        "@opentui/core": "0.5.10",
+        "@opentui/solid": "0.5.10",
+        "solid-js": "1.9.12",
         "@opencode/plugin": "^2.0.4",
         "@opencode/theme": "^2.0.4",
         "@types/node": "^25.5.0",
         "prettier": "^3.8.1",
         "tsup": "^8.5.1",
         "tsx": "^4.21.0",
-        "typescript": "^6.0.2"
+        "typescript": "5.9.3"
     },
     "overrides": {
+        "zod@4.1.8": "$zod",
+        "solid-js@1.9.12": {
+            "seroval": "1.6.12",
+            "seroval-plugins": "1.6.12"
+        },
+        "undici@^8.10.0": "8.12.2",
+        "undici@^6.25.0": "6.29.1",
+        "http-cache-semantics@^4.1.1": "4.3.0",
         "toml@^4.1.1": "5.0.1",
         "brace-expansion@^2.0.0": "2.1.7",
         "@babel/core": "7.29.7",
