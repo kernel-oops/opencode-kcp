@@ -18,6 +18,8 @@ test("real archive listing rejects private canaries and missing runtime files", 
         "lib/tokenizer/tokenizer-worker.js",
         "lib/tokenizer/tokenizer-runtime.bunfig.toml",
         "lib/tokenizer/tsconfig.json",
+        "lib/auth.ts",
+        "lib/config.ts",
         "README.md",
         "LICENSE",
     ]
@@ -27,6 +29,9 @@ test("real archive listing rejects private canaries and missing runtime files", 
         ".impl-private/secret.txt",
         "LOCAL-PROVENANCE.json",
         "lib/.env.private",
+        "lib/.envrc",
+        "lib/.environment",
+        "lib/auth/session.json",
         "lib/state/private.db",
         "lib/auth.json",
         "lib/config/private.json",
@@ -69,7 +74,7 @@ test("real archive listing rejects private canaries and missing runtime files", 
         )
         for (const name of canaries) {
             assert.ok(paths.includes(name), `actual archive must contain test canary ${name}`)
-            assert.throws(() => assertPackedFiles([...clean, name]), /forbidden path/)
+            assert.throws(() => assertPackedFiles([...clean, name]), /forbidden path/, name)
         }
     } finally {
         rmSync(root, { recursive: true, force: true })

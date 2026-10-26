@@ -43,10 +43,10 @@ const requiredTarballFiles = [
 ]
 
 const forbiddenTarballPatterns = [
-    /(?:^|\/)(?:release|\.qualification|\.impl-private|node_modules|\.opencode|\.config|\.cache|\.local|home|cache|fixtures|config)(?:\/|$)/i,
+    /(?:^|\/)(?:release|\.qualification|\.impl-private|node_modules|\.opencode|\.config|\.cache|\.local|home|cache|fixtures|config|auth)(?:\/|$)/i,
     /(?:^|\/)LOCAL-PROVENANCE\.json$/i,
     /(?:^|\/)(?:auth|credentials|tokens|secrets)\.jsonc?$/i,
-    /(?:^|\/)\.env(?:[./]|$)/i,
+    /(?:^|\/)\.env/i,
     /\.(?:db|sqlite|sqlite3|log|tgz|zip|gz|tar)(?:[.-].*)?$/i,
     /^node_modules\//,
     /^index\.ts$/,
