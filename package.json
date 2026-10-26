@@ -1,13 +1,13 @@
 {
     "$schema": "https://json.schemastore.org/package.json",
     "name": "opencode-kcp",
-    "version": "3.2.0-kernel-oops.20261023.1",
+    "version": "0.1.0",
     "private": true,
     "type": "module",
     "workspaces": [
         "tests/logger"
     ],
-    "description": "OpenCode plugin that optimizes token usage by pruning obsolete tool outputs from conversation context",
+    "description": "DCP-derived selective context compression with guarded rewrites and native history preservation for OpenCode",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
     "exports": {
@@ -47,6 +47,14 @@
         "optimization",
         "tokens"
     ],
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/kernel-oops/opencode-kcp.git"
+    },
+    "bugs": {
+        "url": "https://github.com/kernel-oops/opencode-kcp/issues"
+    },
+    "homepage": "https://github.com/kernel-oops/opencode-kcp#readme",
     "author": "tarquinen",
     "license": "AGPL-3.0-or-later",
     "peerDependencies": {

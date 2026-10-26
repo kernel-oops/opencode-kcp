@@ -1,212 +1,116 @@
-# Contributing to DCP
+# Contributing to KCP
 
-Thank you for your interest in contributing to Dynamic Context Pruning (DCP)!
+Thank you for helping improve KCP. This project is derived from Dynamic Context
+Pruning (DCP); preserve upstream authorship, copyright and licence notices, and
+keep the compatibility names described in [README.md](README.md).
 
-## License and Contributions
+## Licence and contributions
 
-This project uses the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+KCP is **AGPL-3.0-or-later**. Contributions to KCP are made under the same
+project licence. Keep applicable copyright and attribution notices with the
+work. KCP does not require an additional CLA or a separate grant of proprietary
+relicensing rights.
 
-### Contribution Agreement
+This contribution policy does not relicense upstream work, alter [LICENSE](LICENSE),
+remove existing notices, or change historical agreements.
 
-By submitting a Pull Request to this project, you agree that:
+## Development setup
 
-1.  Your contributions are licensed under the **AGPL-3.0**.
-2.  You grant the project maintainer(s) a non-exclusive, perpetual, irrevocable, worldwide, royalty-free, transferable license to use, modify, and re-license your contributions under any terms they choose, including commercial or proprietary licenses.
-
-This arrangement ensures the project remains Open Source while providing a path for commercial sustainability.
-
-## Getting Started
-
-1.  Fork the repository.
-2.  Create a feature branch.
-3.  Implement your changes and add tests if applicable (please NO AI SLOP).
-4.  Ensure all tests pass and the code is formatted.
-5.  Submit a Pull Request.
-
-## Development Setup
-
-Use Node.js 24.22.0 and npm 11.19.1. From your checkout:
+The qualified source toolchain is Node **24.22.0** and npm **11.19.1**:
 
 ```sh
 npm ci --ignore-scripts
+npm run typecheck
 npm run build
+npm test
+npm run format:check
+npm run verify:package
+npm audit --audit-level=high
 ```
 
-Peer resolution is ordinary; lifecycle scripts are deliberately disabled. The
-build is run explicitly. This also installs the bundled test logger's dependencies
-through the [tests/logger](tests/logger/) npm workspace. Renderer/Solid and genuine
-OpenCode SDKs provide development/host types, not the distributed runtime closure.
+Peer resolution is ordinary. Lifecycle scripts are deliberately disabled;
+build explicitly rather than enabling every dependency's postinstall hook.
+Build before tests so emitted-entry checks cannot silently skip. The logger is
+a development workspace, not a runtime dependency.
 
-Run the checks relevant to your changes before submitting a pull request:
+Use a feature branch, add a focused regression for non-trivial changes, and
+explain behaviour and compatibility impact in your pull request. Prefer the
+smallest complete change over a new framework or speculative option.
 
-```sh
-npm test                  # DCP and request-logger tests
-npm run typecheck         # TypeScript validation
-npm run check:package     # Build and validate the npm package
-npm run format:check      # Formatting
-```
+## Package and compatibility boundaries
 
-## Compatibility
+- Keep the real server exports (`.` and `./server`), directory `server.js`,
+  source-loaded `./tui`, generated declarations and tokenizer sidecars intact.
+- Keep public SDK contracts for type checking. Do not replace them with ambient
+  shims, weakened types, legacy-peer flags or copied dependency trees.
+- Source overrides do not propagate into tarball consumers. Test the actual
+  packed archive with a fresh ordinary consumer and run its production audit.
+- Preserve protected evidence, atomicity, native history and permission checks.
+  Do not remove a safety assertion just to make a rewrite or test pass.
+- Retain V1 and V2 adapters. A source/schema/type control is not proof of a real
+  V1 host run; likewise, a mocked V2 context is not stock-host/TUI qualification.
 
-DCP provides server and terminal integrations for OpenCode V1 and V2, using shared
-package entrypoints and `dcp.jsonc` settings. Exercise both hosts when changing
-shared behavior.
+The source CI command uses the existing JSONC source-test loader. Actual built
+consumer imports must work in plain Node without it. Use the existing
+`DCP_PACKAGE_ENTRY` fixtures for installed-entry rewrite/protection checks and
+`scripts/consumer-smoke.mjs` for the installed closure and exact sidecar controls.
+That smoke script takes the absolute directory of an already installed fresh
+consumer; Node runs it with the source checkout's `--import tsx` test tooling.
 
-Use [package.json](package.json) for dependency requirements and
-[the lab Dockerfile](tests/lab/Dockerfile) for pinned integration-test versions.
-Host-specific behavior is implemented in [index.ts](index.ts),
-[tui.tsx](tui.tsx), and [lib/v2/](lib/v2/).
+Actual stock OpenCode **2.1.4 / Bun1.4.4** server and PTY qualification is a
+separate local gate. Use disposable state, a clean environment, loopback-only
+network isolation and a separate user cgroup capped at 4 GiB RAM, no swap and
+300 seconds, with bounded process cleanup. Do not use production credentials,
+configuration or session databases. Do not assume hosted runners provide the
+same user-bus/cgroup/network-namespace facilities.
 
-V2 uses `@4@` message IDs and `@b1@` summary IDs. Compression inputs include the
-whole marker; range summaries use `@b1@` placeholders for nested summaries.
-Message-mode priority labels look like `@4@ [high]`; `@blocked@` marks content
-that cannot be selected. V1 uses XML ID tags. Custom prompt overrides must describe
-the ID format of the host they run on.
+## Local development loading
 
-## Local Installation
-
-After building, add this checkout's absolute path to your OpenCode configuration.
-
-For **V2**, use `opencode.json`:
+For ordinary installation, follow the verified release-asset route in
+[README.md](README.md). For development only, build first and merge the
+checkout's **absolute directory** into the V2 server `opencode.jsonc`:
 
 ```jsonc
 {
-    "plugins": [{ "package": "/absolute/path/to/opencode-dynamic-context-pruning" }],
-    "permissions": [{ "action": "compress", "resource": "*", "effect": "allow" }],
+    "$schema": "https://opencode.ai/config.json",
+    "plugins": ["/absolute/path/to/opencode-kcp"],
 }
 ```
 
-For **V1**, add the following to both `opencode.json` (server plugin) and the
-separate `tui.json` (panel):
+The CLI has a **separate global** `cli.json`, not a project-local CLI file:
 
 ```jsonc
-{ "plugin": ["/absolute/path/to/opencode-dynamic-context-pruning"] }
+{
+    "$schema": "https://opencode.ai/v2/cli.json",
+    "plugins": ["/absolute/path/on/this/client/to/opencode-kcp"],
+}
 ```
 
-## Manual Sandbox
+These examples do not grant permissions or remove unrelated settings. Back up
+existing configuration/state and ensure old declared or automatically discovered
+context engines are not also loaded. A remote server path is not automatically
+a valid path on a client machine.
 
-The sandbox requires Docker, Node/npm, and saved OpenCode authentication.
-The request logger is included in [tests/logger](tests/logger/); only the DCP
-checkout is needed. Complete [Development Setup](#development-setup), then run:
+## Optional inherited sandbox and lab tooling
 
-```sh
-npm run sandbox                 # OpenCode V2
-npm run sandbox -- --v1         # OpenCode V1
-```
+The repository retains upstream development tools; they are **not the basic
+installation route** and were not run as part of the release-preparation checks.
+Read their source/options before opting in:
 
-Each launch uses the latest stable OpenCode release for the selected major version,
-rebuilds local DCP and the test logger, and prepares a clean Docker image. Run
-`npm run sandbox -- --help` for available options and defaults. Each launch copies
-all saved authentication from the matching host version: V1's `auth.json`, or V2's
-credential records and account selections. OpenCode handles provider authentication
-normally inside the container; copied credentials can be refreshed there without
-writing back to the host.
+- [scripts/sandbox.mjs](scripts/sandbox.mjs) and the [logger workspace](tests/logger/)
+  provide the inherited Docker sandbox. The sandbox can copy saved authentication
+  into its isolated profile and can call providers. That credential-copying
+  behaviour is optional advanced tooling, not a KCP installation requirement.
+  Its `--dcp VERSION` option selects **upstream DCP's npm package**, not a KCP
+  GitHub release. Legacy `--v1` sandbox configuration must not be copied into a
+  V2 server or global CLI config.
+- [scripts/lab.mjs](scripts/lab.mjs), [tests/lab/Dockerfile](tests/lab/Dockerfile)
+  and [tests/lab/ui.py](tests/lab/ui.py) retain the upstream integration lab.
+  Choose a durable disposable `DCP_LAB_DIR` before large captures. Live/auth-copy
+  scenarios need their own explicit authorisation; do not infer it from running
+  local unit tests. Lab defaults and a newer host download are not evidence that
+  this KCP release has qualified every host version or transport.
 
-V1's auth file is under `$XDG_DATA_HOME/opencode` (normally
-`~/.local/share/opencode`). V2's database is located with `opencode2 debug paths db`,
-or the standard data directory when that command is unavailable. Set `DCP_AUTH_PATH`
-to select a different V1 auth file or V2 database. Credentials embedded in host
-configuration or environment variables are not copied. Custom provider definitions
-can be added to `opencode.json` in the sandbox's scratch workspace.
-
-The sandbox has its own sessions, scratch workspace, and configuration under
-`~/.local/state/dcp-sandbox/`. V1 uses the `v1/` subdirectory, with a separate
-database. Your host project and normal OpenCode configuration are not mounted.
-Try `/dcp` for the panel or `/dcp-compress` for a compression pass.
-
-```sh
-npm run sandbox -- --fresh                 # New profile; keep old runs
-npm run sandbox -- --logs                  # Latest log paths and capture counts
-npm run sandbox -- --path                  # Current profile's host directory
-npm run sandbox -- -- --continue           # Resume a session
-npm run sandbox -- --opencode VERSION      # Use an exact release for this launch
-npm run sandbox -- --dcp latest --fresh    # Test the published npm DCP in a new profile
-npm run sandbox -- --dcp 3.2.0             # Test a specific npm DCP release
-npm run sandbox -- --transport http        # Select V2's transport
-npm run sandbox -- --model PROVIDER/MODEL   # Select a model available to your account
-```
-
-Replace `VERSION`, `PROVIDER`, and `MODEL` with the release and model you want to test.
-Without a saved model choice, OpenCode selects its default. A V2 transport override
-applies to the selected model.
-Add `--v1` to manage the V1 sandbox. Model and transport choices persist.
-An exact version override applies only to that launch; otherwise the latest stable
-release is selected. `--fresh` selects a new profile for subsequent launches.
-`--dcp VERSION` uses `@tarquinen/opencode-dcp@VERSION` through OpenCode's npm plugin
-loader instead of building local DCP. It accepts npm versions, tags, and ranges on
-both V1 and V2. The test logger is still built locally. The DCP choice applies only
-to that launch; omit it or use `--dcp local` to return to the checkout.
-You can edit `dcp.jsonc` and CLI preferences; `opencode.json` is launcher-managed.
-Set `DCP_SANDBOX_DIR` to choose another state directory.
-
-For a shortcut on Linux, run from the checkout:
-
-```sh
-mkdir -p ~/.local/bin
-ln -s "$PWD/scripts/sandbox.mjs" ~/.local/bin/dcp-sandbox
-dcp-sandbox
-```
-
-### Request Logs
-
-The logger is development-only tooling and is excluded from DCP's published npm
-package. Each launch has `raw/` and `readable/` directories under its timestamped log folder.
-The launcher manages the WebSocket relay and readable-log watcher. Requests appear
-as they are sent; assembled responses appear when they finish, while the session
-stays open. `--logs` only shows paths and capture counts.
-
-Start at `readable/index.json`, then a session's numbered request folders:
-
-```text
-readable/<session>/0001_primary_websocket/
-  request.json       # Pretty-printed body actually sent
-  response.json      # Assistant content, parsed tool calls, token totals, errors
-  meta.json          # Timing, completion, transport, raw source, continuation ID
-```
-
-V2's full pre-transport snapshots are in each session's `context/` directory.
-WebSocket continuation requests remain deltas with `previous_response_id`.
-Partial and failed responses are marked in metadata. Full provider metadata,
-original HTTP bytes, and WebSocket frames remain available in `raw/`.
-
-## Integration Tests
-
-The containerized lab exercises packed plugins on V1 and V2, including saved-auth
-copying, HTTP and WebSocket compression, commands, permissions, concurrent sessions,
-persistence, and native compaction. It uses a local mock provider without live credentials.
-
-After [Development Setup](#development-setup), build
-[tests/lab/Dockerfile](tests/lab/Dockerfile) using the image tag expected by
-[scripts/lab.mjs](scripts/lab.mjs), then run:
-
-```sh
-node scripts/lab.mjs
-```
-
-The runner prints its output directory under `/tmp/opencode/dcp-lab/`. Set
-`DCP_LAB_DIR` to override it. Add `--built` to reuse an existing DCP build.
-For real-provider checks, `node scripts/lab.mjs --live` uses the current build and
-saved V2 authentication. Its OpenAI Responses scenarios require access to the model
-configured in [tests/lab/live.mjs](tests/lab/live.mjs).
-
-Inspect capture summaries without opening large transcripts:
-
-```sh
-node tests/lab/inspect.mjs <log-directory>
-```
-
-Terminal-panel checks require `uv` and reuse a completed lab run:
-
-```sh
-uv run --with pexpect --with pyte tests/lab/ui.py <lab-output-directory> v2
-uv run --with pexpect --with pyte tests/lab/ui.py <lab-output-directory> v1
-```
-
-These check the panel, Context, Stats, persisted manual-mode toggle, and closing
-the dialog. They also check mouse-wheel scrolling and resizing down to 20 rows,
-with back/close buttons remaining visible. Terminal transcripts and screen
-snapshots are saved in the lab output.
-
-To check another V2 release, build the lab image with `--build-arg V2=VERSION`
-and pass that image's tag as the final argument to `ui.py`. Use a separate copy of
-the lab output when testing different releases so their databases stay independent.
+No release requires disabling native compaction, modifying Core, copying ACP
+state or deleting an old engine's history. GitHub validation is read-only test
+automation; this repository has no npm publishing workflow.
