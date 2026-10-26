@@ -43,6 +43,13 @@ These projects share ideas and ancestry; this is an approach comparison, **not a
 
 Comparison checked **26 October 2026** against DCP **3.2.0** ([source](https://github.com/Opencode-DCP/opencode-dynamic-context-pruning/tree/f8232fde1e63c2251687e4d9634bd53ce11568cb)) and ACP **1.18.5** ([README](https://github.com/ranxianglei/opencode-acp/blob/98a16d5b43f640abc2e2eac7903553786baaf37b/README.md)). Both projects may evolve; consult their current documentation. Their benchmarks, papers and marketing claims are not KCP benchmarks or guarantees.
 
+KCP exposes **one model-facing agent tool: `compress`**. ACP's separate
+model-facing `decompress`, `search_context` and `acp_status` tools, its tiered
+compression system and its GC fallback are **not bundled into KCP**. KCP's
+retained user-facing decompression/recompression controls are not equivalent
+to that complete ACP toolset. "The same full-featured artefact" means one KCP
+for public and own use, not a superset of every historical ACP feature.
+
 ## Quick start
 
 Use the **built GitHub release asset**, not an npm registry name or a Git URL that omits the build output. KCP intentionally retains `private: true` as protection against accidental npm publication; it does not prevent local tarball installation.
