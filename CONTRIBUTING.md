@@ -1,8 +1,8 @@
 # Contributing to KCP
 
-Thank you for helping improve KCP. This project is derived from Dynamic Context
-Pruning (DCP); preserve upstream authorship, copyright and licence notices, and
-keep the compatibility names described in [README.md](README.md).
+Thank you for helping improve KCP. It is built from Dynamic Context Pruning
+(DCP). Keep the original authors' names, copyright and licence notices, and the
+compatibility names explained in [README.md](README.md).
 
 ## Licence and contributions
 
@@ -16,7 +16,7 @@ remove existing notices, or change historical agreements.
 
 ## Development setup
 
-The qualified source toolchain is Node **24.22.0** and npm **11.19.1**:
+Development checks used Node **24.22.0** and npm **11.19.1**:
 
 ```sh
 npm ci --ignore-scripts
@@ -28,47 +28,54 @@ npm run verify:package
 npm audit --audit-level=high
 ```
 
-Peer resolution is ordinary. Lifecycle scripts are deliberately disabled;
-build explicitly rather than enabling every dependency's postinstall hook.
-Build before tests so emitted-entry checks cannot silently skip. The logger is
-a development workspace, not a runtime dependency.
+Let npm check package versions normally; do not use flags that ignore conflicting
+requirements. `--ignore-scripts` deliberately disables packages' installation
+scripts. Run the build yourself. Build before tests so checks of the generated
+files do not silently skip. The logger is for development and is not installed
+as part of the package people run.
 
-Use a feature branch, add a focused regression for non-trivial changes, and
-explain behaviour and compatibility impact in your pull request. Prefer the
-smallest complete change over a new framework or speculative option.
+Use a feature branch and add a small test for a behaviour change. Explain what
+changes for users and what might stop working. Prefer the smallest complete fix
+over a new framework or an option nobody needs yet.
 
-## Package and compatibility boundaries
+## What must keep working
 
-- Keep the real server exports (`.` and `./server`), directory `server.js`,
-  source-loaded `./tui`, generated declarations and tokenizer sidecars intact.
-- Keep public SDK contracts for type checking. Do not replace them with ambient
-  shims, weakened types, legacy-peer flags or copied dependency trees.
-- Source overrides do not propagate into tarball consumers. Test the actual
-  packed archive with a fresh ordinary consumer and run its production audit.
-- Preserve protected evidence, atomicity, native history and permission checks.
-  Do not remove a safety assertion just to make a rewrite or test pass.
-- Retain V1 and V2 adapters. A source/schema/type control is not proof of a real
-  V1 host run; likewise, a mocked V2 context is not stock-host/TUI qualification.
+- Keep both server imports (`.` and `./server`) and the directory's `server.js`.
+  Keep `./tui`, which OpenCode loads to draw the terminal panel, the generated
+  TypeScript declarations, and the separate token-counting scripts.
+- Use the real public SDK type definitions that describe OpenCode's API. Do not
+  replace missing types with invented declarations, weaken checks, ignore npm
+  version conflicts or copy someone else's installed dependencies.
+- Dependency overrides in this checkout do not apply to people installing its
+  `.tgz`. Install the actual package in a new test directory with normal npm
+  rules, then audit the packages that would run there.
+- Preserve protected text, saved conversation records and permissions. A failed
+  rewrite must apply none of that proposed batch, not half of it. Do not remove
+  an assertion just to make a rewrite or test pass.
+- Keep the V1 and V2 integrations. A type/schema test is not a real V1 host test;
+  an imitation V2 context is not a test with the real OpenCode server or panel.
 
-The source CI command uses the existing JSONC source-test loader. Actual built
-consumer imports must work in plain Node without it. Use the existing
-`DCP_PACKAGE_ENTRY` fixtures for installed-entry rewrite/protection checks and
-`scripts/consumer-smoke.mjs` for the installed closure and exact sidecar controls.
-That smoke script takes the absolute directory of an already installed fresh
-consumer; Node runs it with the source checkout's `--import tsx` test tooling.
+Source tests use a special loader to work around the JSONC parser's source-import
+problem. The built package must load in plain Node without that loader. Existing
+`DCP_PACKAGE_ENTRY` tests check rewriting and protection using an installed copy.
+`scripts/consumer-smoke.mjs` checks its installed dependencies and token-counting
+scripts. Give it the full path to a new test directory where the package is
+already installed; Node runs it with this checkout's `--import tsx` test tooling.
 
-Actual stock OpenCode **2.1.4 / Bun1.4.4** server and PTY qualification is a
-separate local gate. Use disposable state, a clean environment, loopback-only
-network isolation and a separate user cgroup capped at 4 GiB RAM, no swap and
-300 seconds, with bounded process cleanup. Do not use production credentials,
-configuration or session databases. Do not assume hosted runners provide the
-same user-bus/cgroup/network-namespace facilities.
+Tests with standard OpenCode **2.1.4 / Bun 1.4.4** and a real terminal panel are
+separate local checks. A PTY is a simulated terminal that lets the real terminal
+client run and receive input. Use throwaway state and a clean environment. Limit
+the network to loopback and put the processes in their own user cgroup with
+4 GiB RAM, no swap and a 300-second limit. Stop and reap them on failure. Do not
+use production credentials, configuration or conversation databases. GitHub
+runners may not provide the user bus, cgroup controls and network isolation these
+local checks need; passing GitHub checks is not a substitute for them.
 
 ## Local development loading
 
-For ordinary installation, follow the verified release-asset route in
+For normal installation, follow the tested download instructions in
 [README.md](README.md). For development only, build first and merge the
-checkout's **absolute directory** into the V2 server `opencode.jsonc`:
+checkout's **full directory path** into the V2 server `opencode.jsonc`:
 
 ```jsonc
 {
@@ -77,7 +84,8 @@ checkout's **absolute directory** into the V2 server `opencode.jsonc`:
 }
 ```
 
-The CLI has a **separate global** `cli.json`, not a project-local CLI file:
+The terminal client (CLI) has a **separate global** `cli.json`, not a file inside
+each project:
 
 ```jsonc
 {
@@ -86,31 +94,31 @@ The CLI has a **separate global** `cli.json`, not a project-local CLI file:
 }
 ```
 
-These examples do not grant permissions or remove unrelated settings. Back up
-existing configuration/state and ensure old declared or automatically discovered
-context engines are not also loaded. A remote server path is not automatically
-a valid path on a client machine.
+These examples do not grant permissions or replace unrelated settings. Back up
+configuration/state and check that an old context engine is not also loaded,
+including from an automatically discovered plugin directory. A remote server's
+file path will not normally exist on the client machine.
 
-## Optional inherited sandbox and lab tooling
+## Optional sandbox and lab tools from DCP
 
-The repository retains upstream development tools; they are **not the basic
-installation route** and were not run as part of the release-preparation checks.
-Read their source/options before opting in:
+The repository keeps DCP's development tools. They are **not needed to install
+KCP** and were not run as part of the release-preparation checks. Read their
+source and options before choosing to run them:
 
 - [scripts/sandbox.mjs](scripts/sandbox.mjs) and the [logger workspace](tests/logger/)
-  provide the inherited Docker sandbox. The sandbox can copy saved authentication
-  into its isolated profile and can call providers. That credential-copying
-  behaviour is optional advanced tooling, not a KCP installation requirement.
+  provide a Docker sandbox. It can copy saved sign-in details into its separate
+  profile and make AI provider calls. This is optional advanced tooling, not a
+  KCP installation requirement or permission to use your saved credentials.
   Its `--dcp VERSION` option selects **upstream DCP's npm package**, not a KCP
-  GitHub release. Legacy `--v1` sandbox configuration must not be copied into a
+  GitHub release. Old `--v1` sandbox configuration must not be copied into a
   V2 server or global CLI config.
 - [scripts/lab.mjs](scripts/lab.mjs), [tests/lab/Dockerfile](tests/lab/Dockerfile)
-  and [tests/lab/ui.py](tests/lab/ui.py) retain the upstream integration lab.
-  Choose a durable disposable `DCP_LAB_DIR` before large captures. Live/auth-copy
-  scenarios need their own explicit authorisation; do not infer it from running
-  local unit tests. Lab defaults and a newer host download are not evidence that
-  this KCP release has qualified every host version or transport.
+  and [tests/lab/ui.py](tests/lab/ui.py) keep DCP's integration lab.
+  Set `DCP_LAB_DIR` to a throwaway directory on disk before recording large logs.
+  Live calls and copying sign-in details need separate permission; permission to
+  run unit tests does not cover them. Downloading a newer OpenCode version for a
+  lab run does not mean this release was tested with every version or transport.
 
-No release requires disabling native compaction, modifying Core, copying ACP
+No release requires disabling OpenCode's own compaction, modifying Core, copying ACP
 state or deleting an old engine's history. GitHub validation is read-only test
 automation; this repository has no npm publishing workflow.
