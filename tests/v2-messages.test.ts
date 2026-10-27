@@ -7,6 +7,8 @@ import { assignMessageRefs } from "../lib/message-ids"
 import { injectMessageIds, prune } from "../lib/messages"
 import type { PluginConfig } from "../lib/config"
 import { Logger } from "../lib/logger"
+import { injectAnchoredNudge } from "../lib/messages/inject/utils"
+import { TURN_NUDGE } from "../lib/prompts/turn-nudge"
 
 const session = {
     id: "ses_test",
@@ -112,6 +114,20 @@ test("V2 ID injection preserves signatures, media and tool pairing", () => {
     assert.match(JSON.stringify(restored[3]!.content[0]), /@2@/)
     assert.doesNotMatch(JSON.stringify(restored), /dcp-message-id|m0002/)
     assert.ok(!JSON.stringify(native).includes("@2@"), "native input must not be mutated")
+})
+
+test("V2 sends reminder and reference to the model without changing stored input", () => {
+    const native = transcript()
+    const before = structuredClone(native)
+    const view = project(native, entries(native), session)
+    const state = createSessionState("compact")
+    assignMessageRefs(state, view.messages)
+    injectAnchoredNudge(view.messages.at(-1)!, TURN_NUDGE)
+    injectMessageIds(state, config, view.messages, new Map())
+    const outgoing = view.restore().flatMap((message) => message.content.flatMap((part) => part.type === "text" ? [part.text] : [])).join("\n")
+    assert.ok(outgoing.includes(TURN_NUDGE.trim()))
+    assert.match(outgoing, /@[1-9]\d*@/)
+    assert.deepEqual(native, before)
 })
 
 test("V2 tool pruning replaces only marked results", () => {
