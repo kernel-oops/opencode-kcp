@@ -730,7 +730,7 @@ const defaultConfig: PluginConfig = {
         minContextLimit: 50000,
         nudgeFrequency: 5,
         iterationNudgeThreshold: 15,
-        nudgeForce: "soft",
+        nudgeForce: "strong",
         protectedTools: [...COMPRESS_DEFAULT_PROTECTED_TOOLS],
         protectTags: false,
         protectUserMessages: false,

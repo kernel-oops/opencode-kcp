@@ -294,7 +294,14 @@ export function createTextCompleteHandler() {
         _input: { sessionID: string; messageID: string; partID: string },
         output: { text: string },
     ) => {
-        output.text = stripHallucinationsFromString(output.text)
+        const withoutReminders = output.text.replace(
+            /<dcp-system-reminder(?=[\s>])[^>]*>[\s\S]*?(?:<\/dcp-system-reminder>|$)/gi,
+            "",
+        )
+        output.text = stripHallucinationsFromString(withoutReminders).replace(
+            /(?:^|\s+)@(?:[1-9]\d*|b[1-9]\d*|blocked)@(?:[ \t]+\[(?:low|medium|high)\])?(?:\s+@(?:[1-9]\d*|b[1-9]\d*|blocked)@(?:[ \t]+\[(?:low|medium|high)\])?)*\s*$/i,
+            "",
+        )
     }
 }
 

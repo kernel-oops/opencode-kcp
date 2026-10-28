@@ -6,7 +6,7 @@ KCP helps OpenCode manage long conversations. It lets the AI replace finished pa
 
 KCP works with standard OpenCode **2.1.4**. You do not need a special OpenCode build.
 
-**First public release: 0.1.0 · [AGPL-3.0-or-later](LICENSE) · [Releases](https://github.com/kernel-oops/opencode-kcp/releases)**
+**Release: 0.1.1 · [AGPL-3.0-or-later](LICENSE) · [Releases](https://github.com/kernel-oops/opencode-kcp/releases)**
 
 > **A very large thank-you to DCP and ACP.** KCP is built from [Dynamic Context Pruning](https://github.com/Opencode-DCP/opencode-dynamic-context-pruning), created by **tarquinen and its contributors**. Much of the code, design and everyday functionality is their work. [Active Context Pruning](https://github.com/ranxianglei/opencode-acp), by **ranxianglei and contributors**, also helped shape our thinking about letting the AI manage long conversations. KCP's code starts with DCP; we credit ACP for its ideas and our experience using it, not as a claim that we copied its implementation. Original notices and the AGPL licence are retained.
 
@@ -56,20 +56,20 @@ Use the **ready-to-install download from GitHub Releases**. Do not install an np
 
 ### 1. Download, verify and install
 
-The following Linux shell example installs **v0.1.0** under your home directory. It stops if a download, checksum or installation fails, without changing your terminal's settings. It does not edit your OpenCode configuration.
+The following Linux shell example installs **v0.1.1** under your home directory. It stops if a download, checksum or installation fails, without changing your terminal's settings. It does not edit your OpenCode configuration.
 
 ```bash
 (
     set -eu
-    mkdir -p "$HOME/.cache/opencode-kcp/v0.1.0"
-    cd "$HOME/.cache/opencode-kcp/v0.1.0"
+    mkdir -p "$HOME/.cache/opencode-kcp/v0.1.1"
+    cd "$HOME/.cache/opencode-kcp/v0.1.1"
     curl --fail --location --remote-name \
-        https://github.com/kernel-oops/opencode-kcp/releases/download/v0.1.0/opencode-kcp-0.1.0.tgz
+        https://github.com/kernel-oops/opencode-kcp/releases/download/v0.1.1/opencode-kcp-0.1.1.tgz
     curl --fail --location --remote-name \
-        https://github.com/kernel-oops/opencode-kcp/releases/download/v0.1.0/SHA256SUMS
+        https://github.com/kernel-oops/opencode-kcp/releases/download/v0.1.1/SHA256SUMS
     sha256sum --check SHA256SUMS
     npm install --prefix "$HOME/.local/share/opencode-kcp" --ignore-scripts \
-        "$PWD/opencode-kcp-0.1.0.tgz"
+        "$PWD/opencode-kcp-0.1.1.tgz"
     printf '%s\n' "$HOME/.local/share/opencode-kcp/node_modules/opencode-kcp"
 )
 ```
@@ -137,10 +137,10 @@ These numbers tell KCP **when to remind the AI to summarise**. The code calls th
 <details>
 <summary><strong>Defaults and advanced controls</strong></summary>
 
-The complete option reference is [dcp.schema.json](dcp.schema.json); implementation defaults remain in [lib/config.ts](lib/config.ts). This release does not change those defaults.
+The complete option reference is [dcp.schema.json](dcp.schema.json); implementation defaults remain in [lib/config.ts](lib/config.ts).
 
 - Default compression is `range`; `message` remains experimental. Default permission mode is `allow`. On V2, `ask` currently refuses compression rather than opening an approval dialogue; it is not treated as permission to continue.
-- Default lower/upper nudge thresholds are **50,000 / 100,000**; nudge frequency is **5**, iteration threshold **15**, and nudge force `soft`.
+- Default lower/upper nudge thresholds are **50,000 / 100,000**; nudge frequency is **5**, iteration threshold **15**, and nudge force `strong`. Explicit `soft` remains available, but appends nudges to assistant messages and can increase copying of those nudges into replies.
 - `summaryBuffer` defaults to `true`: tokens used by current summaries can extend the point at which KCP reminds the AI. `modelSummaryBuffer`, `modelMinLimits` and `modelMaxLimits` let you set this by provider/model. These settings do not enlarge the model's window or guarantee that a request fits.
 - Use `compress.protectedTools`, `protectedFilePatterns`, optional `protectTags` and `protectUserMessages` to control retained material. Built-in protected-tool handling is inherited from DCP. Do not remove protection merely to make a rewrite succeed.
 - Manual-mode `automaticStrategies` defaults to `true`. Deduplication and purge-errors strategies default to enabled; purge-errors uses four turns. Notifications, turn protection and command controls retain their existing options.
@@ -162,12 +162,13 @@ Shortening an existing summary is a **V2 range-mode** feature. Each entry must s
 - **This is not a permanent archive.** KCP refuses a rewrite if it cannot verify the original/protected text, including older summaries with incomplete helper-result records. OpenCode's own compaction can stop making older material available. Restoring a summary only works while the needed originals and records still exist.
 - **Smaller requests do not always mean lower bills.** Changing earlier text can reduce a provider's cache hits. KCP uses the Anthropic tokenizer, which need not match every provider's counting or billing. Its small-reduction advice is an observation, not proof of savings caused by KCP.
 - **Counting takes time.** A slow count reports an error when its deadline is reached. After you interrupt work, its separate counting process may continue until it finishes or reaches that deadline. Counting does not by itself guarantee a request fits.
+- **Copied markers can appear in replies.** The legacy V1 completed-text hook removes copied reminders and standalone trailing compact tags. The public V2 session hooks do not expose a completed-text editing hook, so KCP cannot clean V2 output or streaming text this way; it does not intercept transport streams or edit historical messages through APIs.
 - **Other OpenCode features are separate.** KCP does not include custom hard request budgets, saved controller state, peer/FYI messages, management of separate build/review sessions, or changes for steering a running agent. It does not require or automatically enable them, and needs no custom Core build.
 - **We tested specific versions, not every setup.** Checks covered Linux x64, standard OpenCode **2.1.4 / its Bun 1.4.4**, and Node **24.22.0**/npm **11.19.1**. V1 and V2 code remains, but that does not mean a fresh full V1 test or tests on all platforms. Older V1 hosts with an older Zod converter may leave bounds/descriptions out of the hints sent to the AI; actual input validation still runs, and the tested 2.1.4 converter is unaffected.
 
 ## Verification and development
 
-The code used for the release passed **417 source tests + 8 logger tests**, TypeScript checks, package/privacy checks, fresh Node loading and token-count checks in Node and standard OpenCode's Bun. Tests with the real OpenCode V2 server covered summarising work, shortening an older summary and removing repeated summary arguments from the copy sent to the AI, without changing saved conversation records. Server/client calls, permissions and a real terminal panel/manual switch were also checked. Documentation-only changes do not rerun those application tests; the code and dependencies must remain unchanged to rely on those results.
+The 0.1.0 release passed **417 source tests + 8 logger tests**, TypeScript checks, package/privacy checks, fresh Node loading and token-count checks in Node and standard OpenCode's Bun. Tests with the real OpenCode V2 server covered summarising work, shortening an older summary and removing repeated summary arguments from the copy sent to the AI, without changing saved conversation records. Server/client calls, permissions and a real terminal panel/manual switch were also checked. These historical results do not establish fresh real-host testing of 0.1.1.
 
 Security checks of a normal installation reported **zero findings** when tested. Checks of all development dependencies reported **12 moderate findings and zero high/critical**. Reports can change as new problems are discovered; the checks still refuse high-severity findings rather than ignoring them.
 
@@ -186,6 +187,8 @@ Build before making a package: `npm pack` does not run `prepublishOnly`. Develop
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for development and the optional sandbox tools. GitHub's automated checks passed for the published v0.1.0 code: installation, types/build/tests/format, package privacy and fresh-install/counting/security checks. The real OpenCode server/panel tests were separate local tests, not run by GitHub. There is no automatic npm publishing workflow.
 
 ## Credits and licence
+
+**0.1.1 change history:** Default nudge force is now `strong`; the V1 completed-text hook also cleans copied reminders and standalone trailing compact tags. Thanks to the DCP upstream issue reporters, including the reporter of [DCP #608](https://github.com/Opencode-DCP/opencode-dynamic-context-pruning/issues/608), for reporting copied tags.
 
 **DCP made this possible.** Thank you to **tarquinen and every DCP contributor** for the original project, design, compression tools, protection checks and code that KCP builds on. Please visit [DCP](https://github.com/Opencode-DCP/opencode-dynamic-context-pruning); its [upstream Ko-fi page](https://ko-fi.com/dansmolsky) supports the upstream author, not KCP fundraising or a claim of affiliation.
 

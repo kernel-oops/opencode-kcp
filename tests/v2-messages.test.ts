@@ -124,7 +124,12 @@ test("V2 sends reminder and reference to the model without changing stored input
     assignMessageRefs(state, view.messages)
     injectAnchoredNudge(view.messages.at(-1)!, TURN_NUDGE)
     injectMessageIds(state, config, view.messages, new Map())
-    const outgoing = view.restore().flatMap((message) => message.content.flatMap((part) => part.type === "text" ? [part.text] : [])).join("\n")
+    const outgoing = view
+        .restore()
+        .flatMap((message) =>
+            message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
+        )
+        .join("\n")
     assert.ok(outgoing.includes(TURN_NUDGE.trim()))
     assert.match(outgoing, /@[1-9]\d*@/)
     assert.deepEqual(native, before)

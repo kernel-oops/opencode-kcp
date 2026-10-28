@@ -11,6 +11,23 @@ import { buildPriorityMap } from "../lib/messages/priority"
 import { stripHallucinationsFromString } from "../lib/messages/utils"
 import { createSessionState, type WithParts } from "../lib/state"
 
+test("completed text removes copied reminders and standalone trailing tags only", async () => {
+    const handler = createTextCompleteHandler()
+    const input = { sessionID: "session", messageID: "message", partID: "part" }
+    for (const [text, expected] of [
+        ["before <dcp-system-reminder>copied</dcp-system-reminder> after", "before  after"],
+        ["before <dcp-system-reminder>unfinished", "before "],
+        ["answer\n\n@12@ [high] @b3@ @blocked@", "answer"],
+        ["inline @12@ stays and suffix@3@", "inline @12@ stays and suffix@3@"],
+        ["mention @12@ in the middle", "mention @12@ in the middle"],
+        ["email@12@", "email@12@"],
+    ]) {
+        const output = { text }
+        await handler(input, output)
+        assert.equal(output.text, expected)
+    }
+})
+
 function buildConfig(mode: "message" | "range" = "message"): PluginConfig {
     return {
         enabled: true,

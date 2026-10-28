@@ -68,6 +68,20 @@ function loadProjectConfig(warnings: string[] = []) {
     }
 }
 
+test("nudge force defaults to strong and accepts explicit soft", () => {
+    assert.equal(loadProjectConfig().compress.nudgeForce, "strong")
+    const original = readFileSync(projectConfigPath, "utf8")
+    try {
+        writeJson(projectConfigPath, { compress: { nudgeForce: "soft" } })
+        assert.equal(loadProjectConfig().compress.nudgeForce, "soft")
+    } finally {
+        writeFileSync(projectConfigPath, original)
+    }
+    const schema = JSON.parse(readFileSync(join(process.cwd(), "dcp.schema.json"), "utf8"))
+    assert.equal(schema.properties.compress.properties.nudgeForce.default, "strong")
+    assert.equal(schema.properties.compress.default.nudgeForce, "strong")
+})
+
 test("modelSummaryBuffer validates as a boolean map without treating qualified keys as config paths", () => {
     const config = { compress: { modelSummaryBuffer: { "provider/model": true } } }
     assert.deepEqual(getInvalidConfigKeys(config), [])
