@@ -308,7 +308,7 @@ export async function setup(ctx: Plugin.Context) {
                 )
                 const priorities = await buildPriorityMap(config, state, view.messages)
                 prompts.reload()
-                injectCompressNudges(
+                await injectCompressNudges(
                     state,
                     config,
                     logger,

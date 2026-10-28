@@ -60,9 +60,9 @@ function fixture(mode: "range" | "message", format: "xml" | "compact", tokens = 
 
 for (const mode of ["range", "message"] as const)
     for (const format of ["xml", "compact"] as const)
-        test(`actual max-threshold nudge gives capability-conditional rewrite recovery without changing roles: ${mode}/${format}`, () => {
+        test(`actual max-threshold nudge gives capability-conditional rewrite recovery without changing roles: ${mode}/${format}`, async () => {
             const { state, config, messages } = fixture(mode, format)
-            injectCompressNudges(state, config, new Logger(false), messages, prompts)
+            await injectCompressNudges(state, config, new Logger(false), messages, prompts)
             assert.deepEqual(
                 messages.map((message) => message.info.role),
                 ["user", "assistant"],
@@ -99,7 +99,7 @@ for (const mode of ["range", "message"] as const)
             } else assert.doesNotMatch(text, /Compressed block context:/)
         })
 
-test("firm recovery remains exclusive to existing max trigger; deny/manual still suppress it", () => {
+test("firm recovery remains exclusive to existing max trigger; deny/manual still suppress it", async () => {
     for (const condition of ["at-max", "deny", "manual"] as const) {
         const { state, config, messages } = fixture(
             "range",
@@ -108,7 +108,7 @@ test("firm recovery remains exclusive to existing max trigger; deny/manual still
         )
         if (condition === "deny") config.compress.permission = "deny"
         if (condition === "manual") state.manualMode = "active"
-        injectCompressNudges(state, config, new Logger(false), messages, prompts)
+        await injectCompressNudges(state, config, new Logger(false), messages, prompts)
         assert.doesNotMatch(JSON.stringify(messages), /MAX CONTEXT LIMIT REACHED/)
         assert.equal(state.nudges.contextLimitAnchors.size, 0)
     }

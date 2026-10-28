@@ -166,7 +166,19 @@ for (const mode of ["range", "message"] as const)
                 system: [],
                 messages: native,
             }
+            const file = join(
+                process.env.XDG_DATA_HOME!,
+                "opencode/storage/plugin/dcp",
+                `${session.id}.json`,
+            )
+            const beforeHook = JSON.parse(readFileSync(file, "utf8"))
+            beforeHook.lastUpdated = "before-context-hook"
+            writeFileSync(file, JSON.stringify(beforeHook))
             await hooks.context(event)
+            assert.notEqual(
+                JSON.parse(readFileSync(file, "utf8")).lastUpdated,
+                "before-context-hook",
+            )
             const outgoingCall = event.messages
                 .find((message) => message.id === "origin")!
                 .content.find((part) => part.type === "tool-call") as any
@@ -177,11 +189,6 @@ for (const mode of ["range", "message"] as const)
             assert.equal(
                 (event.messages.find((m) => m.id === "origin")!.content[0] as any).encrypted,
                 "signature",
-            )
-            const file = join(
-                process.env.XDG_DATA_HOME!,
-                "opencode/storage/plugin/dcp",
-                `${session.id}.json`,
             )
             const stored = JSON.parse(readFileSync(file, "utf8"))
             const block = stored.prune.messages.blocksById["1"]
